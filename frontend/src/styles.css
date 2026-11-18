@@ -6,8 +6,11 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; min-width: 320px; }
 a { color: inherit; text-decoration: none; }
+button, input { font: inherit; }
+
+.app { min-height: 100vh; }
 .topbar {
   height: 72px;
   display: flex;
@@ -21,8 +24,10 @@ a { color: inherit; text-decoration: none; }
 .brandMark {
   width: 38px; height: 38px; display: grid; place-items: center;
   border-radius: 50%; background: #174b34; color: white;
+  font-family: Georgia, serif;
 }
 .topbar nav { display: flex; align-items: center; gap: 28px; font-size: 14px; font-weight: 700; }
+
 .hero {
   max-width: 1180px;
   min-height: 430px;
@@ -39,30 +44,37 @@ a { color: inherit; text-decoration: none; }
 .hero h1 { margin: 0 0 28px; font-family: Georgia, serif; font-size: clamp(44px, 6vw, 72px); line-height: .98; }
 .search {
   width: min(620px, 100%);
-  height: 64px;
+  height: 58px;
   background: white;
+  border: 1px solid #dfe7dc;
   border-radius: 14px;
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  box-shadow: 0 14px 36px rgba(23,75,52,.12);
+  gap: 10px;
+  padding: 0 14px 0 18px;
+  box-shadow: 0 14px 36px rgba(23,75,52,.09);
 }
-.search span { display: none; }
-.search input { width: 100%; border: 0; outline: 0; font-size: 16px; }
+.search > span { color: #6b8075; font-size: 22px; }
+.search input { width: 100%; border: 0; outline: 0; background: transparent; font-size: 16px; color: #17352a; }
+.search button { border: 0; border-radius: 9px; background: #174b34; color: white; height: 42px; padding: 0 20px; font-weight: 800; cursor: pointer; }
 .kindTabs { display: flex; gap: 8px; margin-top: 16px; }
-.kindTabs button { border: 0; background: transparent; padding: 10px 14px; border-radius: 20px; color: #557064; }
-.kindTabs button.active { background: #174b34; color: white; }
-.heroCard {
-  width: 220px; height: 220px; justify-self: end;
+.kindTabs a { padding: 10px 14px; border-radius: 20px; color: #557064; }
+.kindTabs a.active { background: #174b34; color: white; }
+.heroArt { display: grid; place-items: center; }
+.heroCircle {
+  width: 220px; height: 220px;
   border-radius: 50%; background: #174b34; color: white;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   box-shadow: 24px 24px 0 #b7cba7;
 }
-.heroCard strong { font-family: Georgia, serif; font-size: 68px; line-height: 1; }
-.heroCard p, .heroCard span { margin: 4px; }
+.heroCircle strong { font-family: Georgia, serif; font-size: 68px; line-height: 1; }
+.heroCircle span { margin: 4px; }
+
 .section { max-width: 1180px; margin: 56px auto; padding: 0 24px; }
 .sectionTitle { display: flex; align-items: end; justify-content: space-between; }
-.sectionTitle h2, .section h1 { margin: 0; font-family: Georgia, serif; font-size: 42px; }
+.sectionTitle h2, .section h1, .pageHero h1 { margin: 0; font-family: Georgia, serif; font-size: 42px; }
+.textLink { color: #4d705f; font-weight: 800; }
+.textLink span { margin-left: 6px; }
 .categoryGrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-top: 24px; }
 .categoryCard {
   min-height: 132px; border: 1px solid #dfe7dc; background: white;
@@ -71,15 +83,91 @@ a { color: inherit; text-decoration: none; }
   transition: transform .15s ease, box-shadow .15s ease;
 }
 .categoryCard:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(23,75,52,.09); }
-.categoryIcon { width: 42px; height: 42px; border-radius: 12px; background: #edf4e8; display: grid; place-items: center; font-family: Georgia, serif; font-size: 22px; }
+.categoryIcon {
+  width: 42px; height: 42px; border-radius: 12px; background: #edf4e8;
+  display: grid; place-items: center; font-family: Georgia, serif; font-size: 20px;
+}
+.cardArrow { align-self: flex-end; color: #769083; }
+
+.businessGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 24px; }
+.businessCard {
+  min-height: 138px; display: grid; grid-template-columns: 58px 1fr 18px; gap: 14px;
+  align-items: start; background: white; border: 1px solid #dfe7dc; border-radius: 18px;
+  padding: 18px; transition: transform .15s ease, box-shadow .15s ease;
+}
+.businessCard:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(23,75,52,.09); }
+.businessAvatar, .listingAvatar {
+  width: 58px; height: 58px; border-radius: 16px; background: #174b34; color: white;
+  display: grid; place-items: center; font-family: Georgia, serif; font-size: 28px;
+}
+.businessNameRow { display: flex; align-items: center; gap: 8px; }
+.businessNameRow h1 { margin: 0; font-size: 38px; }
+.businessCard p { margin: 7px 0 5px; color: #617469; line-height: 1.45; font-size: 14px; }
+.businessCard small { color: #82948b; }
+.verifiedBadge {
+  width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%;
+  display: inline-grid; place-items: center; background: #4d8268; color: white; font-size: 12px;
+}
+
+.pageHero { min-height: 230px; display: flex; flex-direction: column; justify-content: center; }
+.pageHero .search { margin-top: 24px; }
+.pageHero.compact { min-height: 190px; }
+.pageHero > p:not(.eyebrow) { color: #617469; }
+.categoryHero { border-bottom: 1px solid #dfe7dc; }
+.emptyState {
+  min-height: 220px; border: 1px dashed #cbd8cb; border-radius: 18px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; color: #617469; background: #fbfcf9;
+}
+.emptyState h2 { margin: 8px 0 4px; color: #17352a; }
+.emptyState p { margin: 4px 0 14px; }
+.emptyIcon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 15px; background: #edf4e8; font-size: 24px; }
+
+.listingPage { padding-top: 36px; }
+.listingLayout { display: grid; grid-template-columns: 1fr 300px; gap: 24px; }
+.listingMain { background: white; border: 1px solid #dfe7dc; border-radius: 24px; padding: 36px; }
+.listingAvatar { width: 78px; height: 78px; margin-bottom: 24px; font-size: 38px; }
+.listingDescription { max-width: 620px; color: #617469; line-height: 1.7; }
+.listingAddress { color: #4d705f; }
+.listingAddress span { margin-right: 8px; }
+.listingActions { height: fit-content; background: #edf4e8; border-radius: 24px; padding: 24px; }
+.listingActions .button { width: 100%; justify-content: center; margin: 0 0 10px; }
+.listingActions p { margin: 12px 0 0; font-size: 12px; color: #6a7e72; }
+.whatsapp { background: #247b55; }
+.secondaryButton { border: 1px solid #cbd8cb; background: white; color: #17352a; cursor: pointer; }
+
+.authSection { max-width: 1180px; margin: 40px auto; padding: 40px 24px; display: grid; place-items: center; }
+.authCard { width: min(420px, 100%); background: white; border: 1px solid #dfe7dc; border-radius: 24px; padding: 36px; }
+.authCard h1 { margin: 0 0 24px; font-family: Georgia, serif; font-size: 38px; }
+.authCard label { display: grid; gap: 8px; font-weight: 800; }
+.authCard input { height: 52px; border: 1px solid #dfe7dc; border-radius: 10px; padding: 0 14px; outline: none; }
+.authButton { width: 100%; border: 0; justify-content: center; margin-top: 16px; cursor: pointer; }
+
 .button { display: inline-flex; margin-top: 10px; border-radius: 10px; background: #174b34; color: white; padding: 12px 18px; font-weight: 800; }
 .buttonLight { background: #174b34; color: white; padding: 10px 16px; margin: 0; }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
+  .categoryGrid { grid-template-columns: repeat(3, 1fr); }
+  .businessGrid { grid-template-columns: repeat(2, 1fr); }
+  .hero { grid-template-columns: 1fr 220px; }
+}
+
+@media (max-width: 680px) {
+  .topbar { height: 64px; padding: 0 16px; }
+  .topbar nav { gap: 12px; }
   .topbar nav a:not(.button) { display: none; }
-  .hero { margin: 10px 12px; padding: 44px 24px; grid-template-columns: 1fr; }
-  .heroCard { display: none; }
+  .hero { margin: 8px 12px 24px; padding: 38px 20px; grid-template-columns: 1fr; min-height: 390px; border-radius: 22px; }
   .hero h1 { font-size: 48px; }
+  .heroArt { display: none; }
+  .searchLarge { height: 58px; }
+  .searchLarge button { padding: 0 13px; }
   .categoryGrid { grid-template-columns: repeat(2, 1fr); }
-  .sectionTitle h2, .section h1 { font-size: 34px; }
+  .businessGrid { grid-template-columns: 1fr; }
+  .section { margin: 40px auto; padding: 0 16px; }
+  .sectionTitle h2, .section h1, .pageHero h1 { font-size: 34px; }
+  .categoryCard { min-height: 120px; }
+  .listingLayout { grid-template-columns: 1fr; }
+  .listingMain { padding: 24px; }
+  .listingActions { order: -1; }
+  .businessNameRow h1 { font-size: 32px; }
 }

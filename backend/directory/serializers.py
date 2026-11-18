@@ -35,6 +35,15 @@ class BusinessSerializer(serializers.ModelSerializer):
             "plan_expires_on", "deleted_at", "created_at", "updated_at",
         )
 
+    def create(self, validated_data):
+        category_id = validated_data.pop("category_id", None)
+        subcategory_id = validated_data.pop("subcategory_id", None)
+        if category_id:
+            validated_data["category"] = Category.objects.filter(id=category_id).first()
+        if subcategory_id:
+            validated_data["subcategory"] = Subcategory.objects.filter(id=subcategory_id).first()
+        return super().create(validated_data)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get("request")

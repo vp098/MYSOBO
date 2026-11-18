@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.core.exceptions import ValidationError
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -18,11 +19,33 @@ class BusinessViewSet(viewsets.ModelViewSet):
     serializer_class = BusinessSerializer
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
 
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup = self.kwargs[self.lookup_url_kwarg or self.lookup_field]
+        obj = None
+        try:
+            obj = queryset.filter(**{self.lookup_field: lookup}).first()
+        except (TypeError, ValueError, ValidationError):
+            pass
+        if obj is None:
+            obj = queryset.filter(slug=lookup).first()
+        if obj is None:
+            from django.http import Http404
+            raise Http404
+        self.check_object_permissions(self.request, obj)
+        return obj
+
     def get_queryset(self):
         qs = Business.objects.filter(deleted_at__isnull=True, hidden=False)
         query = self.request.query_params.get("q")
         if query:
             qs = qs.filter(Q(name__icontains=query) | Q(description__icontains=query))
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(Q(category__slug=category) | Q(category__name__iexact=category))
+        kind = self.request.query_params.get("kind")
+        if kind in ("service", "product", "both"):
+            qs = qs.filter(Q(kind=kind) | Q(kind="both"))
         if self.request.query_params.get("verified") == "true":
             qs = qs.filter(verification_level__gte=2)
         return qs
