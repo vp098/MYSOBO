@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
+const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -6,7 +6,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   else headers.set("Content-Type", "application/json");
   const token = sessionStorage.getItem("mysobo-token");
   if (token) headers.set("Authorization", `Token ${token}`);
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const response = await fetch(`${API_BASE}/${path.replace(/^\/+/, "")}`, { ...init, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null;
     throw new Error(body?.detail ?? `API request failed: ${response.status}`);
@@ -111,11 +111,12 @@ export type Business = {
   whatsapp: string;
   address: string | null;
   hide_address: boolean;
-  verification_level: number;
-  plan: "free" | "pro" | "premium";
-  plan_expires_on: string | null;
-  hidden: boolean;
-  source: string;
+  verified: boolean;
+  verification_level?: number;
+  plan?: "free" | "pro" | "premium";
+  plan_expires_on?: string | null;
+  hidden?: boolean;
+  source?: string;
   email?: string;
   website?: string;
   logo?: string;
@@ -143,7 +144,7 @@ export type BusinessSummary = {
   phone: string;
   whatsapp: string;
   address: string | null;
-  verification_level: number;
+  verified: boolean;
   category_name: string;
   subcategory_name: string;
 };

@@ -11,6 +11,12 @@ def has_admin_role(user, *roles):
     return user.admin_roles.filter(role__in=roles).exists()
 
 
+def is_super_admin(user):
+    return bool(user and user.is_authenticated and user.admin_roles.filter(
+        role=AdminRole.Role.SUPER_ADMIN
+    ).exists())
+
+
 def is_member(user, business):
     return bool(user and user.is_authenticated and business.members.filter(user=user).exists())
 
@@ -27,3 +33,8 @@ class IsAdminOrMember(BasePermission):
 class IsVerifier(BasePermission):
     def has_permission(self, request, view):
         return has_admin_role(request.user, AdminRole.Role.VERIFIER)
+
+
+class IsSuperAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return is_super_admin(request.user)

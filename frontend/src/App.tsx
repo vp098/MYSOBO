@@ -90,8 +90,57 @@ function Shell({
 function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [mode, setMode] = useState<"otp" | "password">("otp");
+  const [mobile, setMobile] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeRequested, setCodeRequested] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [notice, setNotice] = useState("");
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = window.setTimeout(() => setResendSeconds((seconds) => seconds - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendSeconds]);
+
+  async function requestOtp(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    setPending(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await apiPost<{ detail: string; resend_after_seconds: number }>(
+        "/auth/otp/request/",
+        { mobile, consent },
+      );
+      setCodeRequested(true);
+      setCode("");
+      setResendSeconds(response.resend_after_seconds);
+      setNotice(response.detail);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not send a verification code.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const response = await apiPost<{ token: string }>("/auth/otp/verify/", { mobile, code });
+      sessionStorage.setItem("mysobo-token", response.token);
+      onSuccess();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not verify this code.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function passwordLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setPending(true);
@@ -118,13 +167,63 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
         <button className="modalClose" type="button" onClick={onClose} aria-label="Close">×</button>
         <p className="eyebrow">Residents and business owners</p>
         <h1 id="login-title">Log in to MySobo</h1>
-        <p className="mutedText">Sign in to save businesses, write reviews, or manage a listing.</p>
-        <form onSubmit={submit}>
-          <label>Username<input name="username" autoComplete="username" required /></label>
-          <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
-          {error && <p className="formError">{error}</p>}
-          <button className="button authButton" type="submit" disabled={pending}>{pending ? "Signing in…" : "Continue"}</button>
-        </form>
+        <p className="mutedText">Sign in with a one-time code sent to your mobile number.</p>
+        {mode === "otp" ? (
+          codeRequested ? (
+            <form onSubmit={verifyOtp}>
+              <p className="mutedText">Enter the 6-digit code sent to {mobile}.</p>
+              <label>Verification code
+                <input
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  required
+                />
+              </label>
+              {error && <p className="formError">{error}</p>}
+              <button className="button authButton" type="submit" disabled={pending || code.length !== 6}>{pending ? "Verifying…" : "Verify and sign in"}</button>
+              <div className="loginSecondaryActions">
+                <button type="button" className="textButton" onClick={() => {
+                  setCodeRequested(false);
+                  setConsent(false);
+                  setCode("");
+                  setError("");
+                  setNotice("");
+                }}>Change number</button>
+                <button type="button" className="textButton" disabled={pending || resendSeconds > 0} onClick={() => void requestOtp()}>
+                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : "Resend code"}
+                </button>
+              </div>
+              {notice && <p className="inlineMessage">{notice}</p>}
+            </form>
+          ) : (
+            <form onSubmit={requestOtp}>
+              <label>Mobile number<input name="mobile" type="tel" inputMode="tel" autoComplete="tel" placeholder="10-digit mobile number" value={mobile} onChange={(event) => setMobile(event.target.value)} required /></label>
+              <label className="consentCheck">
+                <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+                <span>I agree to MySobo's terms and privacy policy.</span>
+              </label>
+              {error && <p className="formError">{error}</p>}
+              <button className="button authButton" type="submit" disabled={pending || !mobile.trim() || !consent}>{pending ? "Sending code…" : "Send verification code"}</button>
+            </form>
+          )
+        ) : (
+          <form onSubmit={passwordLogin}>
+            <label>Username<input name="username" autoComplete="username" required /></label>
+            <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+            {error && <p className="formError">{error}</p>}
+            <button className="button authButton" type="submit" disabled={pending}>{pending ? "Signing in…" : "Sign in with password"}</button>
+          </form>
+        )}
+        <button type="button" className="textButton loginModeToggle" onClick={() => {
+          setMode((current) => current === "otp" ? "password" : "otp");
+          setError("");
+          setNotice("");
+        }}>{mode === "otp" ? "Use username and password instead" : "Use a one-time code instead"}</button>
       </section>
     </div>
   );
@@ -146,7 +245,7 @@ function SearchBox() {
   return (
     <form className="search searchLarge" onSubmit={submit}>
       <span aria-hidden="true">⌕</span>
-      <input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Search by service, business or area" aria-label="Search MySobo" />
+      <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder="Search by service, business or area" aria-label="Search MySobo" />
       <button type="submit">Search</button>
     </form>
   );
@@ -172,7 +271,7 @@ function BusinessCards({ businesses }: { businesses: Business[] }) {
           <span className="businessCardCopy">
             <span className="businessNameRow">
               <strong>{business.name}</strong>
-              {business.verification_level >= 2 && <span className="verifiedBadge" title="Verified">✓</span>}
+              {business.verified && <span className="verifiedBadge" title="Verified">✓</span>}
             </span>
             <span className="businessDescription">{business.description || `${business.kind} in South Bopal`}</span>
             {business.address && !business.hide_address && <small>{business.address}</small>}
@@ -222,8 +321,28 @@ function CatalogCards({
   );
 }
 
+function phoneDigits(phone: string) {
+  let digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return digits;
+}
+
+function phoneHref(phone: string) {
+  const digits = phoneDigits(phone);
+  const international = digits.length === 10 ? `+91${digits}` : `+${digits}`;
+  return `tel:${international}`;
+}
+
+function whatsappHref(phone: string) {
+  const digits = phoneDigits(phone);
+  const international = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${international}`;
+}
+
 function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUser; onLogin: () => void }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(5);
@@ -243,6 +362,10 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
   });
 
   function close() {
+    if (location.pathname.startsWith("/business/")) {
+      navigate("/mysobo");
+      return;
+    }
     const next = new URLSearchParams(params);
     next.delete("listing");
     setParams(next);
@@ -280,6 +403,20 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
     }
   }
 
+  async function openContact(type: "call" | "whatsapp", href: string, newTab = false) {
+    const popup = newTab ? window.open("about:blank", "_blank") : null;
+    if (popup) popup.opener = null;
+    try {
+      await apiPost(`/businesses/${encodeURIComponent(slug)}/events/`, { type });
+      if (popup) popup.location.href = href;
+      else if (newTab) window.open(href, "_blank", "noopener,noreferrer");
+      else window.location.assign(href);
+    } catch (cause) {
+      popup?.close();
+      setMessage(cause instanceof Error ? cause.message : "Could not record this contact action.");
+    }
+  }
+
   return (
     <div className="modalBackdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) close();
@@ -292,16 +429,28 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
               <span className="listingAvatar">{business.name.charAt(0)}</span>
               <div>
                 <p className="eyebrow">{business.category?.name ?? "South Bopal business"}</p>
-                <div className="businessNameRow"><h2>{business.name}</h2>{business.verification_level >= 2 && <span className="verifiedBadge">✓</span>}</div>
+                <div className="businessNameRow"><h2>{business.name}</h2>{business.verified && <span className="verifiedBadge">✓</span>}</div>
               </div>
             </div>
             <p className="listingDescription">{business.description || "Trusted local listing in South Bopal."}</p>
             {business.address && !business.hide_address && <p className="listingAddress">⌖ {business.address}</p>}
             <div className="listingButtons">
-              {business.phone && <a className="button" href={`tel:${business.phone}`}>☎ Call</a>}
-              {business.whatsapp && <a className="button whatsapp" href={`https://wa.me/${business.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">◉ WhatsApp</a>}
+              {business.phone && phoneDigits(business.phone).length >= 10 && <a className="button" href={phoneHref(business.phone)} onClick={(event) => {
+                event.preventDefault();
+                void openContact("call", phoneHref(business.phone));
+              }} aria-label={`Call ${business.name}`}>☎ Call</a>}
+              {business.whatsapp && phoneDigits(business.whatsapp).length >= 10 && <a className="button whatsapp" href={whatsappHref(business.whatsapp)} target="_blank" rel="noreferrer" onClick={(event) => {
+                event.preventDefault();
+                void openContact("whatsapp", whatsappHref(business.whatsapp), true);
+              }} aria-label={`WhatsApp ${business.name}`}>◉ WhatsApp</a>}
               <button type="button" className="button secondaryButton" onClick={toggleSaved}>{saved?.saved ? "♥ Saved" : "♡ Save"}</button>
             </div>
+            {business.phone && phoneDigits(business.phone).length >= 10 && <p className="listingContact">Phone: <a href={phoneHref(business.phone)} onClick={(event) => {
+              event.preventDefault();
+              void openContact("call", phoneHref(business.phone));
+            }}>{business.phone}</a></p>}
+            {business.email && <p className="listingContact">Email: <a href={`mailto:${business.email}`}>{business.email}</a></p>}
+            {business.website && <p className="listingContact">Website: <a href={business.website} target="_blank" rel="noreferrer">{business.website}</a></p>}
             <section className="reviewSection">
               <h3>Resident reviews</h3>
               {reviews.length ? reviews.map((review) => (
@@ -339,11 +488,21 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   const selectedCategory = params.get("category") ?? "";
   const selectedSubcategory = params.get("subcategory") ?? "";
   const query = params.get("q") ?? "";
-  const { data: categories } = useQuery({
+  const {
+    data: categories,
+    isLoading: categoriesLoading,
+    isError: categoriesError,
+    refetch: refetchCategories,
+  } = useQuery({
     queryKey: ["categories", kind],
     queryFn: () => apiGet<Category[]>(`/categories/?kind=${kind}`),
   });
-  const { data: businessData, isLoading } = useQuery({
+  const {
+    data: businessData,
+    isLoading,
+    isError: businessesError,
+    refetch: refetchBusinesses,
+  } = useQuery({
     queryKey: ["businesses", query, selectedCategory, selectedSubcategory, kind],
     queryFn: () => {
       const filters = new URLSearchParams();
@@ -485,8 +644,13 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
             ))}
           </div>
         )}
-        {!visibleCategories.length && (
-          <p className="emptyState">{categories === undefined ? "Loading categories…" : "No categories are configured for this listing type yet."}</p>
+        {categoriesError && categories === undefined ? (
+          <div className="emptyState" role="alert">
+            <p>Could not load categories. Check the API connection and try again.</p>
+            <button className="smallButton" type="button" onClick={() => void refetchCategories()}>Try again</button>
+          </div>
+        ) : !visibleCategories.length && (
+          <p className="emptyState">{categoriesLoading ? "Loading categories…" : "No categories are configured for this listing type yet."}</p>
         )}
       </section>
 
@@ -500,9 +664,15 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
             </p>
             <h2>{query ? `Search: ${query}` : selectedSubcategoryName ?? selectedCategoryName ?? "Trusted nearby"}</h2>
           </div>
-          <span className="mutedText">{businesses.length} listings</span>
+          {businessData !== undefined && <span className="mutedText">{businesses.length} listings</span>}
         </div>
-        {isLoading ? <p className="emptyState">Finding local businesses…</p> : businesses.length ? <BusinessCards businesses={businesses} /> : (
+        {isLoading ? <p className="emptyState">Finding local businesses…</p> : businessesError && businessData === undefined ? (
+          <div className="emptyState" role="alert">
+            <h2>Could not load listings</h2>
+            <p>Check the API connection and try again.</p>
+            <button className="smallButton" type="button" onClick={() => void refetchBusinesses()}>Try again</button>
+          </div>
+        ) : businesses.length ? <BusinessCards businesses={businesses} /> : (
           <div className="emptyState">
             <h2>{selectedSubcategoryName
               ? `No ${selectedSubcategoryName.toLowerCase()} listings yet`
@@ -542,6 +712,11 @@ type PageResponse<T> = {
   results: T[];
 };
 
+type CombinedCategoryListings = PageResponse<Business> & {
+  products?: BusinessProduct[];
+  services?: BusinessService[];
+};
+
 function CategoryPage({ kind, user, onAuthChange }: {
   kind: "service" | "product" | "all";
   user?: PortalUser;
@@ -575,7 +750,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
   }
   const selectedSubcategory = selectedChain[selectedChain.length - 1];
   const searchKey = params.toString();
-  const { data: listings, isLoading: listingsLoading, isError: listingsError, refetch: refetchListings } = useQuery({
+  const { data: listings, isLoading: listingsLoading, isError: listingsError, refetch: refetchListings } = useQuery<CombinedCategoryListings>({
     queryKey: ["category-listings", kind, categorySlug, selectedSubcategory?.id, searchKey],
     enabled: Boolean(category && !invalidSubcategory),
     queryFn: () => {
@@ -631,7 +806,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
     const formData = new FormData(event.currentTarget);
     const next = new URLSearchParams(params);
     next.delete("page");
-    for (const key of ["q", "location", "verified", "min_rating", "ordering"]) {
+    for (const key of ["q", "location", "verified", "min_rating", "min_price", "max_price", "ordering"]) {
       const value = String(formData.get(key) ?? "").trim();
       if (value) next.set(key, value);
       else next.delete(key);
@@ -701,9 +876,9 @@ function CategoryPage({ kind, user, onAuthChange }: {
               </section>
             )}
             <section className="categoryResults">
-              <form className="categoryFilters" onSubmit={applyFilters}>
+              <form className="categoryFilters" key={searchKey} onSubmit={applyFilters}>
                 <h2>Search and filter</h2>
-                <label>Search<input name="q" defaultValue={params.get("q") ?? ""} placeholder={`Search ${selectedSubcategory?.name ?? category.name}`} /></label>
+                <label>Search<input name="q" maxLength={120} defaultValue={params.get("q") ?? ""} placeholder={`Search ${selectedSubcategory?.name ?? category.name}`} /></label>
                 <label>Location<input name="location" defaultValue={params.get("location") ?? ""} placeholder="Area or locality" /></label>
                 <label>Sort by<select name="ordering" defaultValue={params.get("ordering") ?? "relevance"}>
                   <option value="relevance">Most relevant</option>
@@ -866,7 +1041,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
               {isLoading ? <p>Loading your listings…</p> : owned.length ? owned.map((business) => (
                 <button className={`ownerBusinessRow ${selectedBusiness === business.id ? "selected" : ""}`} type="button" key={business.id} onClick={() => setSelectedBusiness(business.id)}>
                   <span><strong>{business.name}</strong><small>{business.category?.name ?? "Uncategorized"} · {business.plan} plan</small></span>
-                  <span className={`statusPill ${business.verification_level >= 2 ? "approved" : "pending"}`}>{business.verification_level >= 2 ? "Verified" : "Under review"}</span>
+                  <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? "Verified" : "Under review"}</span>
                 </button>
               )) : <p className="mutedText">No claimed listings yet.</p>}
               {owned.find((business) => business.id === selectedBusiness) && (
@@ -1410,6 +1585,16 @@ function SuperAdminPortal({ user, onAuthChange }: { user?: PortalUser; onAuthCha
     event.currentTarget.reset();
   }
 
+  async function importEntries(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await run(
+      () => apiUpload("/admin/businesses/import/", new FormData(form)),
+      "CSV import completed. Imported listings are hidden until verified.",
+    );
+    form.reset();
+  }
+
   async function updatePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1449,8 +1634,8 @@ function SuperAdminPortal({ user, onAuthChange }: { user?: PortalUser; onAuthCha
           <CategoryManager run={run} />
           <section className="section portalGrid">
                 <article className="portalPanel"><p className="eyebrow">Verification queue</p><h2>Businesses awaiting review</h2>
-                  {businesses.filter((business) => business.verification_level < 2).map((business) => <div className="adminRow" key={business.id}><span><strong>{business.name}</strong><small>{business.source} · {business.phone}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "verify" }), "Business verified.")}>Verify</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "reject" }), "Listing hidden.")}>Reject</button></div></div>)}
-                  {!businesses.some((business) => business.verification_level < 2) && <p className="mutedText">No business listings awaiting verification.</p>}
+                  {businesses.filter((business) => !business.verified).map((business) => <div className="adminRow" key={business.id}><span><strong>{business.name}</strong><small>{business.source} · {business.phone}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "verify" }), "Business verified.")}>Verify</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "reject" }), "Listing hidden.")}>Reject</button></div></div>)}
+                  {!businesses.some((business) => !business.verified) && <p className="mutedText">No business listings awaiting verification.</p>}
             </article>
             <article className="portalPanel"><p className="eyebrow">Claims</p><h2>Owner claim requests</h2>
               {claims.map((claim) => <div className="adminRow" key={claim.id}><span><strong>{claim.business}</strong><small>Requested by {claim.user}{claim.proof_path ? ` · ${claim.proof_path}` : ""}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost("/admin/claims/", { claim_id: claim.id, decision: "approved" }), "Claim approved.")}>Approve</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost("/admin/claims/", { claim_id: claim.id, decision: "rejected" }), "Claim rejected.")}>Reject</button></div></div>)}
@@ -1468,6 +1653,15 @@ function SuperAdminPortal({ user, onAuthChange }: { user?: PortalUser; onAuthCha
                 <label>Address<input name="address" /></label>
                 <button className="button" type="submit">Save field entry</button>
               </form>
+              <details className="csvImportDetails">
+                <summary>Import listings from CSV</summary>
+                <p className="mutedText">Upload up to 500 listings (5 MB). Every row is validated before import; invalid rows prevent the whole batch from being saved.</p>
+                <p className="csvColumns">Required: <code>name,kind,category_slug</code>. Optional: <code>slug,subcategory_slug,phone,whatsapp,address,description,category_data</code>.</p>
+                <form className="stackForm" onSubmit={importEntries}>
+                  <label>CSV file<input name="file" type="file" accept=".csv,text/csv" required /></label>
+                  <button className="smallButton" type="submit">Validate and import</button>
+                </form>
+              </details>
             </article>
             <article className="portalPanel"><p className="eyebrow">Plan requests</p><h2>Owner requests</h2>
               {planRequests.map((item) => <div className="adminRow" key={item.id}><span><strong>{item.business}</strong><small>Requested {item.requested_plan}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "approve" }), "Plan request approved.")}>Approve</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "reject" }), "Plan request rejected.")}>Reject</button></div></div>)}
@@ -1506,6 +1700,24 @@ function SuperAdminPortal({ user, onAuthChange }: { user?: PortalUser; onAuthCha
   );
 }
 
+function BusinessDetailRoute({ user, onAuthChange }: {
+  user?: PortalUser;
+  onAuthChange: () => void;
+}) {
+  const { slug } = useParams();
+  const navigate = useNavigate();
+  if (!slug) return <Navigate to="/mysobo" replace />;
+  return (
+    <Shell user={user} onAuthChange={onAuthChange}>
+      <ListingDialog
+        slug={slug}
+        user={user}
+        onLogin={() => navigate("/mysobo?dialog=login")}
+      />
+    </Shell>
+  );
+}
+
 export default function App() {
   const [authVersion, setAuthVersion] = useState(0);
   const hasToken = Boolean(sessionStorage.getItem("mysobo-token"));
@@ -1522,6 +1734,10 @@ export default function App() {
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
       <Route path="/mysobo/owner" element={<OwnerPortal user={user} onAuthChange={authChanged} />} />
       <Route path="/mysobo/superadmin" element={<SuperAdminPortal user={user} onAuthChange={authChanged} />} />
+      <Route path="/services/:categorySlug/*" element={<CategoryPage kind="service" user={user} onAuthChange={authChanged} />} />
+      <Route path="/products/:categorySlug/*" element={<CategoryPage kind="product" user={user} onAuthChange={authChanged} />} />
+      <Route path="/categories/:categorySlug/*" element={<CategoryPage kind="all" user={user} onAuthChange={authChanged} />} />
+      <Route path="/business/:slug" element={<BusinessDetailRoute user={user} onAuthChange={authChanged} />} />
       <Route path="*" element={<Navigate to="/mysobo" replace />} />
     </Routes>
   );

@@ -24,8 +24,34 @@ class Profile(models.Model):
     mobile = models.CharField(max_length=15, unique=True, null=True, blank=True)
     society = models.ForeignKey(Society, null=True, blank=True, on_delete=models.SET_NULL)
     consent_at = models.DateTimeField(null=True, blank=True)
+    consent_version = models.CharField(max_length=32, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class OTPChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    mobile = models.CharField(max_length=15)
+    code_hash = models.CharField(max_length=128)
+    request_ip = models.GenericIPAddressField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    consent_version = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=("mobile", "created_at")),
+            models.Index(fields=("request_ip", "created_at")),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("mobile",),
+                condition=models.Q(consumed_at__isnull=True),
+                name="one_active_otp_per_mobile",
+            ),
+        ]
 
 
 class AdminRole(models.Model):
