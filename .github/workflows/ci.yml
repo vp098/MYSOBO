@@ -42,9 +42,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      CI: "true"
       DJANGO_DEBUG: "false"
       DJANGO_SECRET_KEY: "ci-only-test-key-not-for-deployment"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
+      OTP_SMS_BACKEND: "mock"
       DATABASE_URL: "postgresql://mysobo:mysobo-ci-password@localhost:5432/mysobo"
     steps:
       - uses: actions/checkout@v4

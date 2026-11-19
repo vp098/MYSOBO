@@ -58,13 +58,17 @@ def set_authenticated_user_rls_context(user_id):
 
 def send_login_otp(mobile, code):
     backend = getattr(settings, "OTP_SMS_BACKEND", "console" if settings.DEBUG else "twilio")
+    if backend == "mock":
+        if not getattr(settings, "IS_CI", False):
+            raise ImproperlyConfigured("The mock OTP backend is only available in CI.")
+        return
     if backend == "console":
         if not settings.DEBUG:
             raise ImproperlyConfigured("The console OTP backend is only available in DEBUG mode.")
         logger.warning("Development-only MySobo OTP: %s", code)
         return
     if backend != "twilio":
-        raise ImproperlyConfigured("OTP_SMS_BACKEND must be 'console' or 'twilio'.")
+        raise ImproperlyConfigured("OTP_SMS_BACKEND must be 'console', 'twilio', or 'mock'.")
 
     account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
     auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "")

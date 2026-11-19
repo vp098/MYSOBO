@@ -22,7 +22,9 @@ also require the `super_admin` role. Create an initial staff account with
 owner tokens are kept in the browser session and removed when logging out.
 Residents can sign in or create an account with an SMS one-time code. Local
 development prints the OTP to the backend console; production must configure
-Twilio credentials and set `OTP_SMS_BACKEND=twilio`.
+Twilio credentials and set `OTP_SMS_BACKEND=twilio`. CI sets
+`OTP_SMS_BACKEND=mock`; this backend is only accepted when `CI=true` and never
+makes a network request.
 
 On `/mysobo`, **All listings** is selected by default. **Services** includes
 service and both-type businesses; **Products** includes product and

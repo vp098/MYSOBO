@@ -2,15 +2,33 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password
-from django.test import TestCase
+from django.core.exceptions import ImproperlyConfigured
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from .models import OTPChallenge, Profile, User
+from .otp import send_login_otp
 
 
 class OTPAuthTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+
+    @override_settings(OTP_SMS_BACKEND="mock", IS_CI=True)
+    @patch("accounts.otp.urlopen")
+    def test_ci_mock_otp_backend_never_calls_sms_provider(self, urlopen_mock):
+        response = self.client.post(
+            "/api/auth/otp/request/",
+            {"mobile": "9876543210", "consent": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        urlopen_mock.assert_not_called()
+
+    @override_settings(OTP_SMS_BACKEND="mock", IS_CI=False)
+    def test_mock_otp_backend_is_rejected_outside_ci(self):
+        with self.assertRaises(ImproperlyConfigured):
+            send_login_otp("9876543210", "123456")
 
     @patch("accounts.views.send_login_otp")
     def test_mobile_otp_creates_and_authenticates_resident_once(self, send_otp):

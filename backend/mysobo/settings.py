@@ -49,19 +49,26 @@ elif not DEBUG and SECRET_KEY.lower() in {
 
 
 # OTP configuration
+IS_CI = env("CI", "false").strip().lower() == "true"
+
 OTP_SMS_BACKEND = env(
     "OTP_SMS_BACKEND",
     "console" if DEBUG else "twilio"
 ).strip().lower()
 
-if OTP_SMS_BACKEND not in ("console", "twilio"):
+if OTP_SMS_BACKEND not in ("console", "twilio", "mock"):
     raise ImproperlyConfigured(
-        "OTP_SMS_BACKEND must be 'console' or 'twilio'."
+        "OTP_SMS_BACKEND must be 'console', 'twilio', or 'mock'."
     )
 
 if OTP_SMS_BACKEND == "console" and not DEBUG:
     raise ImproperlyConfigured(
         "OTP_SMS_BACKEND=console is only allowed when DEBUG=true."
+    )
+
+if OTP_SMS_BACKEND == "mock" and not IS_CI:
+    raise ImproperlyConfigured(
+        "OTP_SMS_BACKEND=mock is only available in CI."
     )
 
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", "")
