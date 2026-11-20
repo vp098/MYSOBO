@@ -64,7 +64,11 @@ and no longer silently falls back to SQLite. A SQLite URL is accepted only in
 debug mode for isolated tests. Production must set a non-placeholder
 `DJANGO_SECRET_KEY`, set `DJANGO_DEBUG=false`, and configure allowed hosts.
 The backend intentionally refuses to start in production mode without these
-values. Set the frontend API URL with `VITE_API_URL` in `frontend/.env`.
+values. Set `VITE_API_URL` in `frontend/.env` for local development. Because the
+frontend and backend deploy separately, set the frontend Vercel project's
+`VITE_API_URL` to `https://<backend-domain>/api` and set the backend's
+`CORS_ALLOWED_ORIGINS` to the frontend's HTTPS origin. Redeploy the frontend
+after changing `VITE_API_URL`, since Vite embeds it in the production bundle.
 Never commit `.env` files, API keys, or database credentials.
 
 The PostgreSQL migration installs `pg_trgm`, `unaccent`, and `pgcrypto`, adds
