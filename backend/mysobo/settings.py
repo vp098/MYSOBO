@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -116,6 +115,12 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+# Vercel system variables: always match the current deployment host.
+for _name in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+    _host = env(_name)
+    if _host and _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
+
 if not ALLOWED_HOSTS:
     raise ImproperlyConfigured(
         "DJANGO_ALLOWED_HOSTS cannot be empty."
@@ -152,6 +157,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -318,6 +324,19 @@ USE_TZ = True
 STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
+# Fallback: if STATIC_ROOT is missing in the bundle, serve straight from
+# the installed packages (e.g. Django admin assets).
+WHITENOISE_USE_FINDERS = True
 
 MEDIA_URL = "/media/"
 
