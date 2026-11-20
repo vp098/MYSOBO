@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+import dj_database_url
 
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
@@ -166,21 +167,32 @@ if database_url:
                 "DATABASE_URL must include a database name and hostname."
             )
 
+        # DATABASES = {
+        #     "default": {
+        #         "ENGINE": "django.db.backends.postgresql",
+        #         "NAME": unquote(parsed.path.lstrip("/")),
+        #         "USER": unquote(parsed.username or ""),
+        #         "PASSWORD": unquote(parsed.password or ""),
+        #         "HOST": parsed.hostname,
+        #         "PORT": str(parsed.port or 5432),
+        #         "OPTIONS": {
+        #             key: values[-1]
+        #             for key, values in parse_qs(parsed.query).items()
+        #             if key in ("sslmode", "connect_timeout")
+        #         },
+        #     }
+        # }
+
         DATABASES = {
-            "default": {
-                "ENGINE": "django.db.backends.postgresql",
-                "NAME": unquote(parsed.path.lstrip("/")),
-                "USER": unquote(parsed.username or ""),
-                "PASSWORD": unquote(parsed.password or ""),
-                "HOST": parsed.hostname,
-                "PORT": str(parsed.port or 5432),
-                "OPTIONS": {
-                    key: values[-1]
-                    for key, values in parse_qs(parsed.query).items()
-                    if key in ("sslmode", "connect_timeout")
-                },
-            }
+                "default": dj_database_url.config(
+                    default=os.getenv("postgresql://postgres:BlackPenther%40098@db.feyuptbciaqfiadxxdfr.supabase.co:5432/postgres"),
+                    conn_max_age=0,
+                            ssl_require=os.getenv("DB_SSL_REQUIRED", "False").lower() == "true",
+    )
         }
+
+
+
 
     elif parsed.scheme == "sqlite" and DEBUG:
         database_name = unquote(parsed.path.lstrip("/")) or ":memory:"
