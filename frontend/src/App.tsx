@@ -20,6 +20,7 @@ import {
   type Review,
   type Subcategory,
 } from "./services/api";
+import { LanguageSwitch, useT } from "./i18n";
 
 function Shell({
   children,
@@ -33,6 +34,7 @@ function Shell({
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState("");
+  const { t } = useT();
 
   async function logout() {
     try {
@@ -41,7 +43,7 @@ function Shell({
       setLogoutError("");
       onAuthChange();
     } catch (error) {
-      setLogoutError(error instanceof Error ? error.message : "Could not log out.");
+      setLogoutError(error instanceof Error ? error.message : t("err.logout"));
     }
   }
 
@@ -60,21 +62,22 @@ function Shell({
   return (
     <div className="app">
       <header className="topbar">
-        <a className="brand" href="/mysobo" aria-label="MySobo home">
-          <span className="brandMark">M</span><span>MySobo</span>
+        <a className="brand" href="/mysobo" aria-label={t("nav.home")}>
+          <span>mysobo</span><span className="brandDot" aria-hidden="true">.</span>
         </a>
         <nav>
-          <a href="/mysobo">Residents</a>
-          <a href="/mysobo/owner">For businesses</a>
-          {user?.is_superadmin && <a href="/mysobo/superadmin">Super admin</a>}
+          <a href="/mysobo">{t("nav.residents")}</a>
+          <a href="/mysobo/owner">{t("nav.business")}</a>
+          {user?.is_superadmin && <a href="/mysobo/superadmin">{t("nav.superadmin")}</a>}
+          <LanguageSwitch />
           {user ? (
-            <button type="button" className="navButton" onClick={logout}>Log out</button>
+            <button type="button" className="navButton" onClick={logout}>{t("nav.logout")}</button>
           ) : (
             <button type="button" className="button buttonLight" onClick={() => {
               const next = new URLSearchParams(params);
               next.set("dialog", "login");
               setParams(next);
-            }}>Log in</button>
+            }}>{t("nav.login")}</button>
           )}
         </nav>
       </header>
@@ -88,6 +91,7 @@ function Shell({
 }
 
 function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const { t } = useT();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<"otp" | "password">("otp");
@@ -119,7 +123,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       setResendSeconds(response.resend_after_seconds);
       setNotice(response.detail);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not send a verification code.");
+      setError(cause instanceof Error ? cause.message : t("err.sendCode"));
     } finally {
       setPending(false);
     }
@@ -134,7 +138,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       sessionStorage.setItem("mysobo-token", response.token);
       onSuccess();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not verify this code.");
+      setError(cause instanceof Error ? cause.message : t("err.verify"));
     } finally {
       setPending(false);
     }
@@ -153,7 +157,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       sessionStorage.setItem("mysobo-token", response.token);
       onSuccess();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to log in.");
+      setError(cause instanceof Error ? cause.message : t("err.login"));
     } finally {
       setPending(false);
     }
@@ -164,15 +168,15 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
       if (event.target === event.currentTarget) onClose();
     }}>
       <section className="authCard modalCard" role="dialog" aria-modal="true" aria-labelledby="login-title">
-        <button className="modalClose" type="button" onClick={onClose} aria-label="Close">×</button>
-        <p className="eyebrow">Residents and business owners</p>
-        <h1 id="login-title">Log in to MySobo</h1>
-        <p className="mutedText">Sign in with a one-time code sent to your mobile number.</p>
+        <button className="modalClose" type="button" onClick={onClose} aria-label={t("close")}>×</button>
+        <p className="eyebrow">{t("login.eyebrow")}</p>
+        <h1 id="login-title">{t("login.title")}</h1>
+        <p className="mutedText">{t("login.intro")}</p>
         {mode === "otp" ? (
           codeRequested ? (
             <form onSubmit={verifyOtp}>
-              <p className="mutedText">Enter the 6-digit code sent to {mobile}.</p>
-              <label>Verification code
+              <p className="mutedText">{t("login.enterCode", { mobile })}</p>
+              <label>{t("login.code")}
                 <input
                   name="code"
                   inputMode="numeric"
@@ -185,7 +189,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
                 />
               </label>
               {error && <p className="formError">{error}</p>}
-              <button className="button authButton" type="submit" disabled={pending || code.length !== 6}>{pending ? "Verifying…" : "Verify and sign in"}</button>
+              <button className="button authButton" type="submit" disabled={pending || code.length !== 6}>{pending ? t("login.verifying") : t("login.verify")}</button>
               <div className="loginSecondaryActions">
                 <button type="button" className="textButton" onClick={() => {
                   setCodeRequested(false);
@@ -193,37 +197,37 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
                   setCode("");
                   setError("");
                   setNotice("");
-                }}>Change number</button>
+                }}>{t("login.changeNumber")}</button>
                 <button type="button" className="textButton" disabled={pending || resendSeconds > 0} onClick={() => void requestOtp()}>
-                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : "Resend code"}
+                  {resendSeconds > 0 ? t("login.resendIn", { s: resendSeconds }) : t("login.resend")}
                 </button>
               </div>
               {notice && <p className="inlineMessage">{notice}</p>}
             </form>
           ) : (
             <form onSubmit={requestOtp}>
-              <label>Mobile number<input name="mobile" type="tel" inputMode="tel" autoComplete="tel" placeholder="10-digit mobile number" value={mobile} onChange={(event) => setMobile(event.target.value)} required /></label>
+              <label>{t("login.mobile")}<input name="mobile" type="tel" inputMode="tel" autoComplete="tel" placeholder={t("login.mobilePh")} value={mobile} onChange={(event) => setMobile(event.target.value)} required /></label>
               <label className="consentCheck">
                 <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-                <span>I agree to MySobo's terms and privacy policy.</span>
+                <span>{t("login.consent")}</span>
               </label>
               {error && <p className="formError">{error}</p>}
-              <button className="button authButton" type="submit" disabled={pending || !mobile.trim() || !consent}>{pending ? "Sending code…" : "Send verification code"}</button>
+              <button className="button authButton" type="submit" disabled={pending || !mobile.trim() || !consent}>{pending ? t("login.sending") : t("login.send")}</button>
             </form>
           )
         ) : (
           <form onSubmit={passwordLogin}>
-            <label>Username<input name="username" autoComplete="username" required /></label>
-            <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+            <label>{t("login.username")}<input name="username" autoComplete="username" required /></label>
+            <label>{t("login.password")}<input name="password" type="password" autoComplete="current-password" required /></label>
             {error && <p className="formError">{error}</p>}
-            <button className="button authButton" type="submit" disabled={pending}>{pending ? "Signing in…" : "Sign in with password"}</button>
+            <button className="button authButton" type="submit" disabled={pending}>{pending ? t("login.signingIn") : t("login.withPassword")}</button>
           </form>
         )}
         <button type="button" className="textButton loginModeToggle" onClick={() => {
           setMode((current) => current === "otp" ? "password" : "otp");
           setError("");
           setNotice("");
-        }}>{mode === "otp" ? "Use username and password instead" : "Use a one-time code instead"}</button>
+        }}>{mode === "otp" ? t("login.usePassword") : t("login.useOtp")}</button>
       </section>
     </div>
   );
@@ -232,6 +236,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
 function SearchBox() {
   const [params, setParams] = useSearchParams();
   const [value, setValue] = useState(params.get("q") ?? "");
+  const { t } = useT();
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -245,8 +250,8 @@ function SearchBox() {
   return (
     <form className="search searchLarge" onSubmit={submit}>
       <span aria-hidden="true">⌕</span>
-      <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder="Search by service, business or area" aria-label="Search MySobo" />
-      <button type="submit">Search</button>
+      <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder={t("search.placeholder")} aria-label={t("search.label")} />
+      <button type="submit">{t("search.button")}</button>
     </form>
   );
 }
@@ -260,20 +265,21 @@ function categoryIcon(category: Category) {
 
 function BusinessCards({ businesses }: { businesses: Business[] }) {
   const navigate = useNavigate();
+  const { t } = useT();
   if (!businesses.length) {
-    return <div className="emptyState"><h2>No listings found</h2><p>Try a different search or category.</p></div>;
+    return <div className="emptyState"><h2>{t("cards.noneTitle")}</h2><p>{t("cards.noneText")}</p></div>;
   }
   return (
     <div className="businessGrid">
       {businesses.map((business) => (
-        <button className="businessCard" type="button" key={business.id} aria-label={`Open ${business.name} listing`} onClick={() => navigate(`/business/${encodeURIComponent(business.slug)}`)}>
+        <button className="businessCard" type="button" key={business.id} aria-label={t("cards.open", { name: business.name })} onClick={() => navigate(`/business/${encodeURIComponent(business.slug)}`)}>
           <span className="businessAvatar">{business.name.charAt(0)}</span>
           <span className="businessCardCopy">
             <span className="businessNameRow">
               <strong>{business.name}</strong>
-              {business.verified && <span className="verifiedBadge" title="Verified">✓</span>}
+              {business.verified && <span className="verifiedBadge" title={t("verified")}>✓</span>}
             </span>
-            <span className="businessDescription">{business.description || `${business.kind} in South Bopal`}</span>
+            <span className="businessDescription">{business.description || t("cards.inSouthBopal", { kind: t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service") })}</span>
             {business.address && !business.hide_address && <small>{business.address}</small>}
           </span>
           <span className="cardArrow">→</span>
@@ -291,6 +297,7 @@ function CatalogCards({
   services?: BusinessService[];
 }) {
   const navigate = useNavigate();
+  const { t } = useT();
   const items = products.length ? products : services;
   if (!items.length) return null;
   return (
@@ -311,8 +318,8 @@ function CatalogCards({
           <span className="businessAvatar">{item.name.charAt(0)}</span>
           <span className="businessCardCopy">
             <strong>{item.name}</strong>
-            <span className="businessDescription">{item.description || item.service_area || "Local service"}</span>
-            <small>{item.business.name}{item.price_min ? ` · From ₹${item.price_min}` : ""}</small>
+            <span className="businessDescription">{item.description || item.service_area || t("cards.localService")}</span>
+            <small>{item.business.name}{item.price_min ? ` · ${t("cards.from", { price: item.price_min })}` : ""}</small>
           </span>
           <span className="cardArrow">→</span>
         </button>
@@ -346,6 +353,7 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(5);
+  const { t } = useT();
   const { data: business, isLoading } = useQuery({
     queryKey: ["listing", slug],
     queryFn: () => apiGet<Business>(`/businesses/${encodeURIComponent(slug)}/`),
@@ -380,9 +388,9 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
       if (saved?.saved) await apiDelete(`/businesses/${encodeURIComponent(slug)}/saved/`);
       else await apiPost(`/businesses/${encodeURIComponent(slug)}/saved/`);
       await queryClient.invalidateQueries({ queryKey: ["saved", slug] });
-      setMessage(saved?.saved ? "Removed from saved businesses." : "Business saved.");
+      setMessage(saved?.saved ? t("listing.removed") : t("listing.savedMsg"));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save this business.");
+      setMessage(error instanceof Error ? error.message : t("err.save"));
     }
   }
 
@@ -396,10 +404,10 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
     try {
       await apiPost(`/businesses/${encodeURIComponent(slug)}/reviews/`, { rating, body });
       await queryClient.invalidateQueries({ queryKey: ["reviews", slug] });
-      setMessage("Thanks for sharing your review.");
+      setMessage(t("listing.thanks"));
       event.currentTarget.reset();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not submit your review.");
+      setMessage(error instanceof Error ? error.message : t("err.review"));
     }
   }
 
@@ -413,7 +421,7 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
       else window.location.assign(href);
     } catch (cause) {
       popup?.close();
-      setMessage(cause instanceof Error ? cause.message : "Could not record this contact action.");
+      setMessage(cause instanceof Error ? cause.message : t("err.contact"));
     }
   }
 
@@ -421,57 +429,57 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
     <div className="modalBackdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) close();
     }}>
-      <section className="listingModal" role="dialog" aria-modal="true" aria-label="Business details">
-        <button className="modalClose" type="button" onClick={close} aria-label="Close">×</button>
-        {isLoading ? <p>Loading business…</p> : business ? (
+      <section className="listingModal" role="dialog" aria-modal="true" aria-label={t("listing.dialog")}>
+        <button className="modalClose" type="button" onClick={close} aria-label={t("close")}>×</button>
+        {isLoading ? <p>{t("listing.loading")}</p> : business ? (
           <>
             <div className="listingHeader">
               <span className="listingAvatar">{business.name.charAt(0)}</span>
               <div>
-                <p className="eyebrow">{business.category?.name ?? "South Bopal business"}</p>
+                <p className="eyebrow">{business.category?.name ?? t("listing.defaultCategory")}</p>
                 <div className="businessNameRow"><h2>{business.name}</h2>{business.verified && <span className="verifiedBadge">✓</span>}</div>
               </div>
             </div>
-            <p className="listingDescription">{business.description || "Trusted local listing in South Bopal."}</p>
+            <p className="listingDescription">{business.description || t("listing.defaultDesc")}</p>
             {business.address && !business.hide_address && <p className="listingAddress">⌖ {business.address}</p>}
             <div className="listingButtons">
               {business.phone && phoneDigits(business.phone).length >= 10 && <a className="button" href={phoneHref(business.phone)} onClick={(event) => {
                 event.preventDefault();
                 void openContact("call", phoneHref(business.phone));
-              }} aria-label={`Call ${business.name}`}>☎ Call</a>}
+              }} aria-label={t("listing.callName", { name: business.name })}>☎ {t("listing.call")}</a>}
               {business.whatsapp && phoneDigits(business.whatsapp).length >= 10 && <a className="button whatsapp" href={whatsappHref(business.whatsapp)} target="_blank" rel="noreferrer" onClick={(event) => {
                 event.preventDefault();
                 void openContact("whatsapp", whatsappHref(business.whatsapp), true);
-              }} aria-label={`WhatsApp ${business.name}`}>◉ WhatsApp</a>}
-              <button type="button" className="button secondaryButton" onClick={toggleSaved}>{saved?.saved ? "♥ Saved" : "♡ Save"}</button>
+              }} aria-label={t("listing.whatsappName", { name: business.name })}>◉ {t("listing.whatsapp")}</a>}
+              <button type="button" className="button secondaryButton" onClick={toggleSaved}>{saved?.saved ? `♥ ${t("listing.saved")}` : `♡ ${t("listing.save")}`}</button>
             </div>
-            {business.phone && phoneDigits(business.phone).length >= 10 && <p className="listingContact">Phone: <a href={phoneHref(business.phone)} onClick={(event) => {
+            {business.phone && phoneDigits(business.phone).length >= 10 && <p className="listingContact">{t("listing.phone")}: <a href={phoneHref(business.phone)} onClick={(event) => {
               event.preventDefault();
               void openContact("call", phoneHref(business.phone));
             }}>{business.phone}</a></p>}
-            {business.email && <p className="listingContact">Email: <a href={`mailto:${business.email}`}>{business.email}</a></p>}
-            {business.website && <p className="listingContact">Website: <a href={business.website} target="_blank" rel="noreferrer">{business.website}</a></p>}
+            {business.email && <p className="listingContact">{t("listing.email")}: <a href={`mailto:${business.email}`}>{business.email}</a></p>}
+            {business.website && <p className="listingContact">{t("listing.website")}: <a href={business.website} target="_blank" rel="noreferrer">{business.website}</a></p>}
             <section className="reviewSection">
-              <h3>Resident reviews</h3>
+              <h3>{t("listing.reviews")}</h3>
               {reviews.length ? reviews.map((review) => (
                 <article className="reviewCard" key={review.id}>
                   <strong>{review.user_name}</strong><span className="reviewStars">{"★".repeat(review.rating)}</span>
                   {review.body && <p>{review.body}</p>}
                 </article>
-              )) : <p className="mutedText">No reviews yet. Share the first one.</p>}
+              )) : <p className="mutedText">{t("listing.noReviews")}</p>}
               <form className="reviewForm" onSubmit={submitReview}>
-                <label>Rating
+                <label>{t("listing.rating")}
                   <select value={rating} onChange={(event) => setRating(Number(event.target.value))}>
-                    {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} stars</option>)}
+                    {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{t("listing.stars", { n: value })}</option>)}
                   </select>
                 </label>
-                <label>Your review<textarea name="review" placeholder="How was your experience?" rows={3} /></label>
-                <button className="button" type="submit">Post review</button>
+                <label>{t("listing.yourReview")}<textarea name="review" placeholder={t("listing.reviewPh")} rows={3} /></label>
+                <button className="button" type="submit">{t("listing.post")}</button>
               </form>
               {message && <p className="inlineMessage">{message}</p>}
             </section>
           </>
-        ) : <div className="emptyState"><h2>Listing unavailable</h2></div>}
+        ) : <div className="emptyState"><h2>{t("listing.unavailable")}</h2></div>}
       </section>
     </div>
   );
@@ -481,6 +489,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const resultsRef = useRef<HTMLElement>(null);
+  const { t } = useT();
   const requestedKind = params.get("kind");
   const kind = requestedKind === "service" || requestedKind === "product"
     ? requestedKind
@@ -577,10 +586,10 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
     <Shell user={user} onAuthChange={onAuthChange}>
       <section className="hero">
         <div className="heroCopy">
-          <p className="eyebrow">South Bopal, Ahmedabad</p>
-          <h1>Find trusted help,<br />close to home.</h1>
+          <p className="eyebrow">{t("home.place")}</p>
+          <h1>{t("home.title1")}<br />{t("home.title2")}</h1>
           <SearchBox />
-          <div className="kindTabs" aria-label="Browse services or products">
+          <div className="kindTabs" aria-label={t("home.tabsLabel")}>
             {["all", "service", "product"].map((item) => (
               <button
                 key={item}
@@ -589,18 +598,18 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
                 aria-pressed={kind === item}
                 onClick={() => setFilter("kind", item)}
               >
-                {item === "all" ? "All listings" : item === "service" ? "Services" : "Products"}
+                {item === "all" ? t("tab.all") : item === "service" ? t("tab.service") : t("tab.product")}
               </button>
             ))}
           </div>
         </div>
-        <div className="heroArt" aria-hidden="true"><div className="heroCircle"><span>South Bopal</span><strong>Local</strong><span>and trusted</span></div></div>
+        <div className="heroArt" aria-hidden="true"><div className="heroCircle"><span>{t("hero.top")}</span><strong>{t("hero.big")}</strong><span>{t("hero.bottom")}</span></div></div>
       </section>
 
       <section className="section categorySection">
         <div className="sectionTitle">
-          <div><p className="eyebrow">Browse local</p><h2>Popular categories</h2></div>
-          {selectedCategory && <button className="textLink resetFilter" type="button" onClick={() => setFilter("category", "")}>Clear category ×</button>}
+          <div><p className="eyebrow">{t("home.browseLocal")}</p><h2>{t("home.popular")}</h2></div>
+          {selectedCategory && <button className="textLink resetFilter" type="button" onClick={() => setFilter("category", "")}>{t("home.clearCategory")}</button>}
         </div>
         <div className="categoryGrid">
           {visibleCategories.map((category) => (
@@ -616,19 +625,19 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
             >
               <span className="categoryIcon">{categoryIcon(category)}</span>
               <strong>{category.name}</strong>
-              <small>{category.listing_count} listings</small>
+              <small>{t("listings.count", { n: category.listing_count })}</small>
               <span className="cardArrow">→</span>
             </button>
           ))}
         </div>
         {selectedCategoryRecord && visibleSubcategories.length > 0 && (
-          <div className="subcategoryList" aria-label={`${selectedCategoryName} subcategories`}>
+          <div className="subcategoryList" aria-label={t("home.subLabel", { name: selectedCategoryName ?? "" })}>
             <button
               type="button"
               className={`subcategoryChip ${selectedSubcategory ? "" : "active"}`}
               onClick={() => setFilter("subcategory", "")}
             >
-              All {selectedCategoryName}
+              {t("home.allIn", { name: selectedCategoryName ?? "" })}
             </button>
             {orderedSubcategories.map(({ item: subcategory, depth }) => (
               <button
@@ -646,11 +655,11 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
         )}
         {categoriesError && categories === undefined ? (
           <div className="emptyState" role="alert">
-            <p>Could not load categories. Check the API connection and try again.</p>
-            <button className="smallButton" type="button" onClick={() => void refetchCategories()}>Try again</button>
+            <p>{t("err.categories")}</p>
+            <button className="smallButton" type="button" onClick={() => void refetchCategories()}>{t("tryAgain")}</button>
           </div>
         ) : !visibleCategories.length && (
-          <p className="emptyState">{categoriesLoading ? "Loading categories…" : "No categories are configured for this listing type yet."}</p>
+          <p className="emptyState">{categoriesLoading ? t("home.loadingCats") : t("home.noCats")}</p>
         )}
       </section>
 
@@ -659,36 +668,34 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           <div>
             <p className="eyebrow">
               {selectedCategory
-                ? kind === "all" ? "Category listings" : `${kind === "service" ? "Service" : "Product"} category listings`
-                : kind === "product" ? "Shop local" : kind === "service" ? "Find a service" : "Browse local listings"}
+                ? kind === "all" ? t("home.eyCategory") : kind === "service" ? t("home.eyServiceCat") : t("home.eyProductCat")
+                : kind === "product" ? t("home.eyShop") : kind === "service" ? t("home.eyFind") : t("home.eyBrowse")}
             </p>
-            <h2>{query ? `Search: ${query}` : selectedSubcategoryName ?? selectedCategoryName ?? "Trusted nearby"}</h2>
+            <h2>{query ? t("home.searchResult", { q: query }) : selectedSubcategoryName ?? selectedCategoryName ?? t("home.trusted")}</h2>
           </div>
-          {businessData !== undefined && <span className="mutedText">{businesses.length} listings</span>}
+          {businessData !== undefined && <span className="mutedText">{t("listings.count", { n: businesses.length })}</span>}
         </div>
-        {isLoading ? <p className="emptyState">Finding local businesses…</p> : businessesError && businessData === undefined ? (
+        {isLoading ? <p className="emptyState">{t("home.finding")}</p> : businessesError && businessData === undefined ? (
           <div className="emptyState" role="alert">
-            <h2>Could not load listings</h2>
-            <p>Check the API connection and try again.</p>
-            <button className="smallButton" type="button" onClick={() => void refetchBusinesses()}>Try again</button>
+            <h2>{t("err.listingsTitle")}</h2>
+            <p>{t("err.checkApi")}</p>
+            <button className="smallButton" type="button" onClick={() => void refetchBusinesses()}>{t("tryAgain")}</button>
           </div>
         ) : businesses.length ? <BusinessCards businesses={businesses} /> : (
           <div className="emptyState">
-            <h2>{selectedSubcategoryName
-              ? `No ${selectedSubcategoryName.toLowerCase()} listings yet`
-              : selectedCategoryName
-                ? `No ${selectedCategoryName.toLowerCase()} listings yet`
+            <h2>{selectedSubcategoryName || selectedCategoryName
+              ? t("empty.namedTitle", { name: selectedSubcategoryName ?? selectedCategoryName ?? "" })
               : kind === "all"
-                ? "No local listings yet"
-                : `No ${kind} listings yet`}</h2>
+                ? t("empty.allTitle")
+                : kind === "service" ? t("empty.serviceTitle") : t("empty.productTitle")}</h2>
             <p>{selectedSubcategoryName || selectedCategoryName
-              ? `There are no ${kind === "all" ? "" : `${kind} `}businesses in this selection yet. Try another category or check back soon.`
+              ? t("empty.selectionText")
               : query
-                ? "Try a different search term."
+                ? t("empty.searchText")
                 : kind === "all"
-                  ? "There are no verified local businesses to show yet."
-                  : `There are no verified local ${kind} businesses to show yet.`}</p>
-            {selectedCategory && <button className="smallButton" type="button" onClick={() => setFilter("category", "")}>Browse all categories</button>}
+                  ? t("empty.allText")
+                  : kind === "service" ? t("empty.serviceText") : t("empty.productText")}</p>
+            {selectedCategory && <button className="smallButton" type="button" onClick={() => setFilter("category", "")}>{t("home.browseAll")}</button>}
           </div>
         )}
       </section>
@@ -727,6 +734,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const subcategorySlugs = (useParams()["*"] ?? "").split("/").filter(Boolean);
+  const { t } = useT();
   const categoryBase = kind === "service" ? "/services" : kind === "product" ? "/products" : "/categories";
   const { data: categories = [], isLoading: categoriesLoading, isError: categoryError, refetch: refetchCategories } = useQuery({
     queryKey: ["categories", kind],
@@ -778,8 +786,8 @@ function CategoryPage({ kind, user, onAuthChange }: {
     item.parent_id === (selectedSubcategory?.id ?? null)
   );
   const breadcrumbs = [
-    { label: "Home", href: `/mysobo?kind=${kind}` },
-    { label: category?.name ?? "Category", href: `${categoryBase}/${categorySlug}` },
+    { label: t("cat.home"), href: `/mysobo?kind=${kind}` },
+    { label: category?.name ?? t("cat.category"), href: `${categoryBase}/${categorySlug}` },
     ...selectedChain.map((item, index) => ({
       label: item.name,
       href: `${categoryBase}/${categorySlug}/${selectedChain.slice(0, index + 1).map((part) => part.slug).join("/")}`,
@@ -830,7 +838,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
   return (
     <Shell user={user} onAuthChange={onAuthChange}>
       <section className="section categoryLanding">
-        <nav className="breadcrumbs" aria-label="Breadcrumb">
+        <nav className="breadcrumbs" aria-label={t("cat.breadcrumb")}>
           {breadcrumbs.map((item, index) => (
             <span key={item.href}>
               {index > 0 && <span aria-hidden="true"> / </span>}
@@ -840,10 +848,10 @@ function CategoryPage({ kind, user, onAuthChange }: {
             </span>
           ))}
         </nav>
-        {categoriesLoading ? <p className="emptyState">Loading category…</p> : categoryError ? (
-          <div className="emptyState"><p>Could not load this category.</p><button className="smallButton" type="button" onClick={() => void refetchCategories()}>Retry</button></div>
+        {categoriesLoading ? <p className="emptyState">{t("cat.loading")}</p> : categoryError ? (
+          <div className="emptyState"><p>{t("cat.loadError")}</p><button className="smallButton" type="button" onClick={() => void refetchCategories()}>{t("retry")}</button></div>
         ) : !category || invalidSubcategory ? (
-          <div className="emptyState"><h1>Category not found</h1><p>This category or subcategory may have been removed.</p><Link className="button" to={`/mysobo?kind=${kind}`}>Browse categories</Link></div>
+          <div className="emptyState"><h1>{t("cat.notFound")}</h1><p>{t("cat.removed")}</p><Link className="button" to={`/mysobo?kind=${kind}`}>{t("cat.browseCategories")}</Link></div>
         ) : (
           <>
             <header className="categoryPageHeader">
@@ -853,23 +861,23 @@ function CategoryPage({ kind, user, onAuthChange }: {
                   : <span>{category.icon || category.name.charAt(0).toUpperCase()}</span>}
               </div>
               <div>
-                <p className="eyebrow">{kind === "all" ? "Local listings" : kind === "service" ? "Local services" : "Local products"} · South Bopal</p>
+                <p className="eyebrow">{kind === "all" ? t("cat.eyAll") : kind === "service" ? t("cat.eyService") : t("cat.eyProduct")} · {t("hero.top")}</p>
                 <h1>{selectedSubcategory?.name ?? category.name}</h1>
                 {selectedSubcategory?.description || (!selectedSubcategory && category.description)
                   ? <p>{selectedSubcategory?.description || category.description}</p>
                   : null}
-                <strong>{listingCount} active listings</strong>
+                <strong>{t("cat.active", { n: listingCount })}</strong>
               </div>
             </header>
             {directSubcategories.length > 0 && (
               <section className="categorySubcategories">
-                <h2>{selectedSubcategory ? `More in ${selectedSubcategory.name}` : `Browse ${category.name}`}</h2>
+                <h2>{selectedSubcategory ? t("cat.moreIn", { name: selectedSubcategory.name }) : t("cat.browseName", { name: category.name })}</h2>
                 <div className="subcategoryCards">
                   {directSubcategories.map((item) => (
                     <button className="subcategoryCard" type="button" key={item.id} onClick={() =>
                       navigate(`${categoryBase}/${category.slug}/${subcategoryPath(item).join("/")}${location.search}`)
                     }>
-                      <strong>{item.name}</strong><span>{item.listing_count} listings</span>
+                      <strong>{item.name}</strong><span>{t("listings.count", { n: item.listing_count })}</span>
                     </button>
                   ))}
                 </div>
@@ -877,69 +885,69 @@ function CategoryPage({ kind, user, onAuthChange }: {
             )}
             <section className="categoryResults">
               <form className="categoryFilters" key={searchKey} onSubmit={applyFilters}>
-                <h2>Search and filter</h2>
-                <label>Search<input name="q" maxLength={120} defaultValue={params.get("q") ?? ""} placeholder={`Search ${selectedSubcategory?.name ?? category.name}`} /></label>
-                <label>Location<input name="location" defaultValue={params.get("location") ?? ""} placeholder="Area or locality" /></label>
-                <label>Sort by<select name="ordering" defaultValue={params.get("ordering") ?? "relevance"}>
-                  <option value="relevance">Most relevant</option>
-                  <option value="rating">Highest rated</option>
-                  <option value="recent">Recently added</option>
-                  <option value="alphabetical">Alphabetical</option>
-                  {kind === "product" && <><option value="price_low">Price: low to high</option><option value="price_high">Price: high to low</option></>}
-                  {kind === "service" && <><option value="price_low">Price: low to high</option><option value="price_high">Price: high to low</option></>}
+                <h2>{t("cat.filterTitle")}</h2>
+                <label>{t("cat.search")}<input name="q" maxLength={120} defaultValue={params.get("q") ?? ""} placeholder={t("cat.searchPh", { name: selectedSubcategory?.name ?? category.name })} /></label>
+                <label>{t("cat.location")}<input name="location" defaultValue={params.get("location") ?? ""} placeholder={t("cat.locationPh")} /></label>
+                <label>{t("cat.sort")}<select name="ordering" defaultValue={params.get("ordering") ?? "relevance"}>
+                  <option value="relevance">{t("sort.relevance")}</option>
+                  <option value="rating">{t("sort.rating")}</option>
+                  <option value="recent">{t("sort.recent")}</option>
+                  <option value="alphabetical">{t("sort.alpha")}</option>
+                  {kind === "product" && <><option value="price_low">{t("sort.priceLow")}</option><option value="price_high">{t("sort.priceHigh")}</option></>}
+                  {kind === "service" && <><option value="price_low">{t("sort.priceLow")}</option><option value="price_high">{t("sort.priceHigh")}</option></>}
                 </select></label>
-                <label>Minimum rating<select name="min_rating" defaultValue={params.get("min_rating") ?? ""}>
-                  <option value="">Any rating</option><option value="4">4+ stars</option><option value="3">3+ stars</option>
+                <label>{t("cat.minRating")}<select name="min_rating" defaultValue={params.get("min_rating") ?? ""}>
+                  <option value="">{t("cat.anyRating")}</option><option value="4">{t("cat.starsPlus", { n: 4 })}</option><option value="3">{t("cat.starsPlus", { n: 3 })}</option>
                 </select></label>
-                <label className="checkLabel"><input name="verified" type="checkbox" value="true" defaultChecked={params.get("verified") === "true"} /> Verified businesses</label>
+                <label className="checkLabel"><input name="verified" type="checkbox" value="true" defaultChecked={params.get("verified") === "true"} /> {t("cat.verifiedOnly")}</label>
                 {kind === "product" && <>
-                  <label>Minimum price<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
-                  <label>Maximum price<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
+                  <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
+                  <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
                 </>}
                 {kind === "service" && <>
-                  <label>Minimum price<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
-                  <label>Maximum price<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
+                  <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
+                  <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
                 </>}
                 {filterFields.map((field: CategoryField) => (
                   <label key={field.id}>{field.label}
                     {field.field_type === "choice" ? (
                       <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
-                        <option value="">Any</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}
+                        <option value="">{t("any")}</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}
                       </select>
                     ) : field.field_type === "boolean" ? (
                       <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
-                        <option value="">Any</option><option value="true">Yes</option><option value="false">No</option>
+                        <option value="">{t("any")}</option><option value="true">{t("yes")}</option><option value="false">{t("no")}</option>
                       </select>
                     ) : (
                       <input name={`field_${field.key}`} type={field.field_type === "number" ? "number" : "text"} defaultValue={params.get(`field_${field.key}`) ?? ""} />
                     )}
                   </label>
                 ))}
-                <div className="filterActions"><button className="button" type="submit">Apply filters</button><button className="smallButton" type="button" onClick={() => setParams(new URLSearchParams())}>Clear all</button></div>
+                <div className="filterActions"><button className="button" type="submit">{t("cat.apply")}</button><button className="smallButton" type="button" onClick={() => setParams(new URLSearchParams())}>{t("cat.clearAll")}</button></div>
               </form>
               <div className="categoryListingArea">
                 <div className="sectionTitle">
-                  <div><p className="eyebrow">Matching {kind === "all" ? "businesses" : `${kind} listings`}</p><h2>{selectedSubcategory?.name ?? category.name}</h2></div>
-                  <span className="mutedText">{listings?.count ?? 0} results</span>
+                  <div><p className="eyebrow">{kind === "all" ? t("cat.matchingAll") : kind === "service" ? t("cat.matchingService") : t("cat.matchingProduct")}</p><h2>{selectedSubcategory?.name ?? category.name}</h2></div>
+                  <span className="mutedText">{t("cat.results", { n: listings?.count ?? 0 })}</span>
                 </div>
-                {listingsLoading ? <p className="emptyState">Finding matching listings…</p> : listingsError ? (
-                  <div className="emptyState"><p>Could not load listings.</p><button className="smallButton" type="button" onClick={() => void refetchListings()}>Retry</button></div>
+                {listingsLoading ? <p className="emptyState">{t("cat.finding")}</p> : listingsError ? (
+                  <div className="emptyState"><p>{t("cat.listingsError")}</p><button className="smallButton" type="button" onClick={() => void refetchListings()}>{t("retry")}</button></div>
                 ) : (listings?.results.length || listings?.products?.length || listings?.services?.length) ? (
                   <>
                     {kind === "all"
                       ? <BusinessCards businesses={listings?.results ?? []} />
                       : <CatalogCards products={listings?.products} services={listings?.services} />}
-                    <nav className="pagination" aria-label="Listing pages">
-                      <button className="smallButton" type="button" disabled={!listings.previous} onClick={() => changePage(page - 1)}>Previous</button>
-                      <span>Page {page} of {totalPages}</span>
-                      <button className="smallButton" type="button" disabled={!listings.next} onClick={() => changePage(page + 1)}>Next</button>
+                    <nav className="pagination" aria-label={t("cat.pages")}>
+                      <button className="smallButton" type="button" disabled={!listings.previous} onClick={() => changePage(page - 1)}>{t("cat.prev")}</button>
+                      <span>{t("cat.pageOf", { page, total: totalPages })}</span>
+                      <button className="smallButton" type="button" disabled={!listings.next} onClick={() => changePage(page + 1)}>{t("cat.next")}</button>
                     </nav>
                   </>
                 ) : (
                   <div className="emptyState">
-                    <h2>No listings available in this category yet.</h2>
-                    <p>{selectedSubcategory ? `There are no matching listings in ${selectedSubcategory.name} yet.` : "Please check back soon."}</p>
-                    {selectedSubcategory && <Link className="smallButton" to={`${categoryBase}/${category.slug}`}>Return to {category.name}</Link>}
+                    <h2>{t("cat.emptyTitle")}</h2>
+                    <p>{selectedSubcategory ? t("cat.emptySub", { name: selectedSubcategory.name }) : t("cat.checkBack")}</p>
+                    {selectedSubcategory && <Link className="smallButton" to={`${categoryBase}/${category.slug}`}>{t("cat.returnTo", { name: category.name })}</Link>}
                   </div>
                 )}
               </div>
@@ -955,6 +963,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
   const queryClient = useQueryClient();
   const [selectedBusiness, setSelectedBusiness] = useState("");
   const [search, setSearch] = useState("");
+  const { t } = useT();
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const { data: owned = [], isLoading } = useQuery({
@@ -992,7 +1001,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
       setNotice(success);
       await queryClient.invalidateQueries();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The request failed.");
+      setError(cause instanceof Error ? cause.message : t("err.request"));
     }
   }
 
@@ -1007,7 +1016,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
       category_id: form.get("category_id") || undefined,
       subcategory_id: form.get("subcategory_id") || undefined,
       category_data: categoryDataFromForm(form),
-    }), "Your listing was created and is awaiting verification.");
+    }), t("owner.created"));
     event.currentTarget.reset();
   }
 
@@ -1016,7 +1025,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
     const form = new FormData(event.currentTarget);
     await perform(() => apiPost("/owner/posts/", {
       business_id: form.get("business_id"), title: form.get("title"), body: form.get("body"),
-    }), "Offer sent for review.");
+    }), t("owner.offerSent"));
     event.currentTarget.reset();
   }
 
@@ -1025,25 +1034,25 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
     const form = new FormData(event.currentTarget);
     await perform(() => apiPost("/owner/plans/", {
       business_id: form.get("business_id"), plan: form.get("plan"),
-    }), "Plan request submitted for approval.");
+    }), t("owner.planSubmitted"));
   }
 
   return (
     <Shell user={user} onAuthChange={onAuthChange}>
-      <PortalIntro eyebrow="Business owner portal" title="Manage your local presence" copy="Claim your existing listing or create one, post offers, track review status and request a plan." />
+      <PortalIntro eyebrow={t("owner.eyebrow")} title={t("owner.title")} copy={t("owner.copy")} />
       {!user ? (
-        <section className="section ownerGate"><h2>Sign in to continue</h2><p>Use your MySobo account to manage your business listing.</p><a className="button" href="/mysobo?dialog=login">Log in</a></section>
+        <section className="section ownerGate"><h2>{t("owner.signInTitle")}</h2><p>{t("owner.signInText")}</p><a className="button" href="/mysobo?dialog=login">{t("nav.login")}</a></section>
       ) : (
         <>
           <section className="section portalGrid">
             <article className="portalPanel">
-              <p className="eyebrow">Your listings</p><h2>Business status</h2>
-              {isLoading ? <p>Loading your listings…</p> : owned.length ? owned.map((business) => (
+              <p className="eyebrow">{t("owner.yourListings")}</p><h2>{t("owner.status")}</h2>
+              {isLoading ? <p>{t("owner.loading")}</p> : owned.length ? owned.map((business) => (
                 <button className={`ownerBusinessRow ${selectedBusiness === business.id ? "selected" : ""}`} type="button" key={business.id} onClick={() => setSelectedBusiness(business.id)}>
-                  <span><strong>{business.name}</strong><small>{business.category?.name ?? "Uncategorized"} · {business.plan} plan</small></span>
-                  <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? "Verified" : "Under review"}</span>
+                  <span><strong>{business.name}</strong><small>{business.category?.name ?? t("owner.uncategorized")} · {t("owner.planName", { plan: business.plan ?? "" })}</small></span>
+                  <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? t("verified") : t("owner.underReview")}</span>
                 </button>
-              )) : <p className="mutedText">No claimed listings yet.</p>}
+              )) : <p className="mutedText">{t("owner.noClaimed")}</p>}
               {owned.find((business) => business.id === selectedBusiness) && (
                 <EditBusinessForm
                   business={owned.find((business) => business.id === selectedBusiness)!}
@@ -1060,56 +1069,56 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
                       phone: form.get("phone"),
                       whatsapp: form.get("whatsapp"),
                       address: form.get("address"),
-                    }), "Listing details updated.");
+                    }), t("owner.updated"));
                   }}
                 />
               )}
             </article>
             <article className="portalPanel">
-              <p className="eyebrow">Claim a business</p><h2>Find your existing listing</h2>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by business name" />
+              <p className="eyebrow">{t("owner.claimEyebrow")}</p><h2>{t("owner.findExisting")}</h2>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("owner.searchName")} />
               {matchingBusinesses.slice(0, 5).map((business) => (
                 <div className="claimRow" key={business.id}>
                   <span>{business.name}</span>
                   <button type="button" className="smallButton" onClick={() => perform(
                     () => apiPost("/owner/claims/", { business_id: business.id }),
-                    "Claim submitted. We will update its status after verification.",
-                  )}>Claim</button>
+                    t("owner.claimSubmitted"),
+                  )}>{t("owner.claim")}</button>
                 </div>
               ))}
               {claims.map((claim) => <p className="compactRow" key={claim.id}>{claim.business} · <span className={`statusPill ${claim.status === "approved" ? "approved" : "pending"}`}>{claim.status}</span>{claim.note && ` · ${claim.note}`}</p>)}
-              <p className="mutedText">Claims are reviewed before owner access is granted.</p>
+              <p className="mutedText">{t("owner.claimsReviewed")}</p>
             </article>
           </section>
           <section className="section portalGrid">
             <article className="portalPanel">
-              <p className="eyebrow">Create listing</p><h2>Add your business</h2>
+              <p className="eyebrow">{t("owner.createEyebrow")}</p><h2>{t("owner.addBusiness")}</h2>
               <BusinessForm onSubmit={createBusiness} />
             </article>
             <article className="portalPanel">
-              <p className="eyebrow">Offers and updates</p><h2>Post an offer</h2>
+              <p className="eyebrow">{t("owner.offersEyebrow")}</p><h2>{t("owner.postOffer")}</h2>
               {owned.length ? <form className="stackForm" onSubmit={submitPost}>
-                <label>Business<select name="business_id" required defaultValue={selectedBusiness}><option value="">Choose listing</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-                <label>Offer title<input name="title" required maxLength={200} /></label>
-                <label>Details<textarea name="body" required rows={3} /></label>
-                <button className="button" type="submit">Submit offer</button>
-              </form> : <p className="mutedText">Claim or create a listing to post offers.</p>}
+                <label>{t("owner.business")}<select name="business_id" required defaultValue={selectedBusiness}><option value="">{t("owner.chooseListing")}</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+                <label>{t("owner.offerTitle")}<input name="title" required maxLength={200} /></label>
+                <label>{t("owner.details")}<textarea name="body" required rows={3} /></label>
+                <button className="button" type="submit">{t("owner.submitOffer")}</button>
+              </form> : <p className="mutedText">{t("owner.claimToPost")}</p>}
               {posts.map((post) => <p className="compactRow" key={post.id}>{post.title} <span className="statusPill pending">{post.status}</span></p>)}
             </article>
           </section>
           <section className="section portalGrid">
             <article className="portalPanel">
-              <p className="eyebrow">Plans</p><h2>Choose a plan</h2>
+              <p className="eyebrow">{t("owner.plansEyebrow")}</p><h2>{t("owner.choosePlan")}</h2>
               {owned.length ? <form className="stackForm" onSubmit={submitPlan}>
-                <label>Business<select name="business_id" required><option value="">Choose listing</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name} ({item.plan})</option>)}</select></label>
-                <label>Plan<select name="plan" required>{(plans?.plans ?? []).map((plan) => <option value={plan.plan} key={plan.plan}>{plan.plan} — ₹{plan.monthly_price}/month</option>)}</select></label>
-                <button className="button" type="submit">Request plan change</button>
-              </form> : <p className="mutedText">Add or claim a listing before selecting a plan.</p>}
-              {plans?.requests.map((item, index) => <p className="compactRow" key={`${item.business_id}-${index}`}>{item.requested_plan} plan request · {item.status}</p>)}
+                <label>{t("owner.business")}<select name="business_id" required><option value="">{t("owner.chooseListing")}</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name} ({item.plan})</option>)}</select></label>
+                <label>{t("owner.plan")}<select name="plan" required>{(plans?.plans ?? []).map((plan) => <option value={plan.plan} key={plan.plan}>{t("owner.perMonth", { plan: plan.plan, price: plan.monthly_price })}</option>)}</select></label>
+                <button className="button" type="submit">{t("owner.requestPlan")}</button>
+              </form> : <p className="mutedText">{t("owner.addBeforePlan")}</p>}
+              {plans?.requests.map((item, index) => <p className="compactRow" key={`${item.business_id}-${index}`}>{t("owner.planRequest", { plan: item.requested_plan, status: item.status })}</p>)}
             </article>
             <article className="portalPanel">
-              <p className="eyebrow">How it works</p><h2>Verified, not just listed</h2>
-              <p className="mutedText">New listings and offers remain under review until MySobo verifies them. Your listing status and current plan appear here.</p>
+              <p className="eyebrow">{t("owner.howEyebrow")}</p><h2>{t("owner.verifiedTitle")}</h2>
+              <p className="mutedText">{t("owner.howText")}</p>
             </article>
           </section>
         </>
@@ -1153,6 +1162,7 @@ function BusinessClassificationFields({
   const [categoryId, setCategoryId] = useState(defaultCategoryId);
   const [subcategoryId, setSubcategoryId] = useState(defaultSubcategoryId);
   const [kind, setKind] = useState<Business["kind"]>(defaultKind);
+  const { t } = useT();
   const eligibleCategories = categories.filter((category) =>
     kind === "service" ? category.supports_services
       : kind === "product" ? category.supports_products
@@ -1174,11 +1184,11 @@ function BusinessClassificationFields({
   );
   return (
     <>
-      <label>Category<select name="category_id" value={selectedCategory?.id ?? ""} onChange={(event) => {
+      <label>{t("form.category")}<select name="category_id" value={selectedCategory?.id ?? ""} onChange={(event) => {
         setCategoryId(event.target.value);
         setSubcategoryId("");
-      }}><option value="">Choose category</option>{eligibleCategories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-      <label>Type<select name="kind" value={kind} onChange={(event) => {
+      }}><option value="">{t("form.chooseCategory")}</option>{eligibleCategories.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+      <label>{t("form.type")}<select name="kind" value={kind} onChange={(event) => {
         const nextKind = event.target.value as Business["kind"];
         setKind(nextKind);
         const currentCategory = categories.find((item) => item.id === categoryId);
@@ -1197,19 +1207,19 @@ function BusinessClassificationFields({
         )) {
           setSubcategoryId("");
         }
-      }}><option value="service">Service</option><option value="product">Product</option><option value="both">Both</option></select></label>
-      <label>Subcategory<select name="subcategory_id" value={selectedSubcategoryId} onChange={(event) => setSubcategoryId(event.target.value)}><option value="">Choose subcategory (optional)</option>{eligibleSubcategories.map((item) => <option value={item.id} key={item.id}>{item.parent_id ? "↳ " : ""}{item.name}</option>)}</select></label>
+      }}><option value="service">{t("kind.service")}</option><option value="product">{t("kind.product")}</option><option value="both">{t("kind.both")}</option></select></label>
+      <label>{t("form.subcategory")}<select name="subcategory_id" value={selectedSubcategoryId} onChange={(event) => setSubcategoryId(event.target.value)}><option value="">{t("form.chooseSub")}</option>{eligibleSubcategories.map((item) => <option value={item.id} key={item.id}>{item.parent_id ? "↳ " : ""}{item.name}</option>)}</select></label>
       {categoryFields.map((field) => {
         const defaultValue = defaultCategoryData?.[field.key];
         return (
           <label key={field.id}>{field.label}{field.required && " *"}
             {field.field_type === "choice" ? (
               <select name={`category_field_${field.key}`} required={field.required} defaultValue={defaultValue === undefined ? "" : String(defaultValue)}>
-                <option value="">Choose {field.label.toLowerCase()}</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                <option value="">{t("form.chooseField", { label: field.label.toLowerCase() })}</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             ) : field.field_type === "boolean" ? (
               <select name={`category_field_${field.key}`} required={field.required} defaultValue={defaultValue === undefined ? "" : String(defaultValue)}>
-                <option value="">Choose</option><option value="true">Yes</option><option value="false">No</option>
+                <option value="">{t("form.choose")}</option><option value="true">{t("yes")}</option><option value="false">{t("no")}</option>
               </select>
             ) : (
               <input
@@ -1231,12 +1241,13 @@ function EditBusinessForm({ business, onSubmit }: {
   business: Business;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useT();
   const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   return (
     <details className="editDetails">
-      <summary>Edit listing details</summary>
+      <summary>{t("form.edit")}</summary>
       <form className="stackForm" onSubmit={onSubmit}>
-        <label>Business name<input name="name" required defaultValue={business.name} /></label>
+        <label>{t("form.name")}<input name="name" required defaultValue={business.name} /></label>
         <BusinessClassificationFields
           key={business.id}
           categories={categories ?? []}
@@ -1245,11 +1256,11 @@ function EditBusinessForm({ business, onSubmit }: {
           defaultKind={business.kind}
           defaultCategoryData={business.category_data}
         />
-        <label>Description<textarea name="description" rows={3} defaultValue={business.description} /></label>
-        <label>Phone<input name="phone" defaultValue={business.phone} /></label>
-        <label>WhatsApp<input name="whatsapp" defaultValue={business.whatsapp} /></label>
-        <label>Address<input name="address" defaultValue={business.address ?? ""} /></label>
-        <button className="button" type="submit">Save changes</button>
+        <label>{t("form.description")}<textarea name="description" rows={3} defaultValue={business.description} /></label>
+        <label>{t("form.phone")}<input name="phone" defaultValue={business.phone} /></label>
+        <label>{t("form.whatsapp")}<input name="whatsapp" defaultValue={business.whatsapp} /></label>
+        <label>{t("form.address")}<input name="address" defaultValue={business.address ?? ""} /></label>
+        <button className="button" type="submit">{t("form.save")}</button>
       </form>
     </details>
   );
@@ -1259,16 +1270,17 @@ function BusinessForm({ onSubmit }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
+  const { t } = useT();
   const choices = data ?? [];
   return (
     <form className="stackForm" onSubmit={onSubmit}>
-      <label>Business name<input name="name" required maxLength={200} /></label>
+      <label>{t("form.name")}<input name="name" required maxLength={200} /></label>
       <BusinessClassificationFields categories={choices} />
-      <label>Description<textarea name="description" rows={3} /></label>
-      <label>Phone<input name="phone" inputMode="tel" /></label>
-      <label>WhatsApp<input name="whatsapp" inputMode="tel" /></label>
-      <label>Address<input name="address" /></label>
-      <button className="button" type="submit">Create listing</button>
+      <label>{t("form.description")}<textarea name="description" rows={3} /></label>
+      <label>{t("form.phone")}<input name="phone" inputMode="tel" /></label>
+      <label>{t("form.whatsapp")}<input name="whatsapp" inputMode="tel" /></label>
+      <label>{t("form.address")}<input name="address" /></label>
+      <button className="button" type="submit">{t("form.create")}</button>
     </form>
   );
 }
