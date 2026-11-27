@@ -5,7 +5,7 @@ from directory.photo_views import OwnerPhotoDetailView, OwnerPhotoOrderView, Own
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
-from accounts.views import DemoEmailLoginView, GoogleLoginView, OTPRequestView, OTPVerifyView
+from accounts.views import DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
 from directory.portal_views import (
     AdminAuditView,
     AdminBusinessesView,
@@ -45,6 +45,8 @@ urlpatterns = [
     path("api/auth/otp/verify/", OTPVerifyView.as_view(), name="auth-otp-verify"),
     path("api/auth/google/", GoogleLoginView.as_view(), name="auth-google"),
     path("api/auth/demo-email/", DemoEmailLoginView.as_view(), name="auth-demo-email"),
+    path("api/auth/email/register/", EmailRegisterView.as_view(), name="auth-email-register"),
+    path("api/auth/email/login/", EmailLoginView.as_view(), name="auth-email-login"),
     path("api/auth/me/", CurrentUserView.as_view(), name="auth-me"),
     path("api/auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("api/owner/businesses/", OwnerBusinessesView.as_view(), name="owner-businesses"),

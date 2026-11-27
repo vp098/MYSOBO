@@ -323,6 +323,8 @@ AUTH_PASSWORD_VALIDATORS = [
             "MinimumLengthValidator"
         )
     },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 
@@ -483,6 +485,7 @@ REST_FRAMEWORK = {
         "google_login": "20/min",
         "demo_login": "20/min",
         "photo_upload": "60/hour",
+        "email_auth": "20/min",
     },
 }
 

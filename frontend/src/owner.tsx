@@ -3,7 +3,8 @@ import { IconBadge } from "./iconBadge";
 import { PhotoLibrary } from "./photos";
 import { BadgeCheck, Store } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { apiGet, apiPatch, apiPost, apiPut, type Business, type PortalUser } from "./services/api";
 import { LANGUAGES, useT, type MessageKey } from "./i18n";
 import { BusinessForm, EditBusinessForm, Shell, categoryDataFromForm } from "./App";
@@ -366,12 +367,47 @@ function OwnerWelcome() {
 
 const GS_HIDE = "mysobo-gs-hidden";
 const SHARED = "mysobo-link-shared";
-const TIP_DONE = "mysobo-first-tip";
 const readFlag = (key: string) => { try { return localStorage.getItem(key) === "1"; } catch { return false; } };
 const setFlag = (key: string) => { try { localStorage.setItem(key, "1"); } catch { /* ignore */ } };
 
+type DayStat = { day: string; view: number; call: number; whatsapp: number };
+type OwnerStatsData = {
+  view: number; call: number; whatsapp: number;
+  daily: DayStat[];
+  last14: Record<Metric, number>;
+  prev14: Record<Metric, number>;
+};
+type Metric = "view" | "call" | "whatsapp";
+
+/** Height that makes an element end at the bottom of the window (desktop only). */
+function useFitToViewport(enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const query = window.matchMedia("(min-width: 1100px) and (min-height: 600px)");
+    const measure = () => {
+      const node = ref.current;
+      if (!node || !query.matches) { setHeight(null); return; }
+      const top = node.getBoundingClientRect().top + window.scrollY;
+      setHeight(Math.max(470, window.innerHeight - top - 16));
+    };
+    measure();
+    const late = window.setTimeout(measure, 250);
+    window.addEventListener("resize", measure);
+    query.addEventListener("change", measure);
+    return () => { window.clearTimeout(late); window.removeEventListener("resize", measure); query.removeEventListener("change", measure); };
+  }, [enabled]);
+  return { ref, style: height ? { height } : undefined };
+}
+
+function greetingKey(): MessageKey {
+  const hour = new Date().getHours();
+  return hour < 12 ? "ov.morning" : hour < 17 ? "ov.afternoon" : "ov.evening";
+}
+
 function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashData & { user: PortalUser }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const date = useDate();
   const navigate = useNavigate();
   const [tab, setTab] = useState<"listings" | "offers" | "activity">("listings");
@@ -380,12 +416,23 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
   const [copied, setCopied] = useState("");
   const [shared, setShared] = useState(() => readFlag(SHARED));
   const [gsHidden, setGsHidden] = useState(() => readFlag(GS_HIDE));
-  const [tipDone, setTipDone] = useState(() => readFlag(TIP_DONE));
+  const { data: stats } = useQuery({ queryKey: ["owner-stats"], queryFn: () => apiGet<OwnerStatsData>("/owner/stats/") });
+  const fit = useFitToViewport(true);
+
   const nameOf = (id: string) => owned.find((item) => item.id === id)?.name ?? "";
   const list = owned.filter((item) => !query || `${item.name} ${item.category?.name ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   const firstLive = owned.find((item) => listingState(item) === "live");
   const firstDraft = owned.find((item) => listingState(item) === "draft");
-  const ownerName = user.name || user.email || t("od.owner");
+  const firstName = (user.name || user.email || t("od.owner")).split(/[\s@]/)[0];
+  const counts = { live: 0, waiting: 0, draft: 0 };
+  owned.forEach((item) => { counts[listingState(item)] += 1; });
+  const bestPlan = owned.reduce<PlanKey>((best, item) => (PLAN_RANK[planOf(item)] > PLAN_RANK[best] ? planOf(item) : best), "free");
+  const fields = (b: Business) => [b.description, b.phone, b.whatsapp, b.address, b.category, (b.hours ?? []).length > 0, (b.photos ?? []).length > 0];
+  const completeness = owned.length
+    ? Math.round(owned.reduce((sum, b) => sum + fields(b).filter(Boolean).length / fields(b).length, 0) / owned.length * 100)
+    : 0;
+  const locale = lang === "gu" ? "gu-IN" : lang === "hi" ? "hi-IN" : "en-IN";
+  const today = new Date().toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
 
   async function copyLink(business: Business) {
     const url = `${window.location.origin}/business/${business.slug}`;
@@ -396,12 +443,12 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
     window.setTimeout(() => setCopied(""), 2000);
   }
 
-  const steps: { key: MessageKey; done: boolean; cover: string; action: () => void }[] = [
-    { key: "cd.gs1", done: owned.length > 0, cover: "/covers/home.svg", action: () => navigate("/mysobo/owner/add") },
-    { key: "cd.gs2", done: owned.some((item) => listingState(item) !== "draft"), cover: "/covers/shop.svg", action: () => (firstDraft ? askApproval(firstDraft) : navigate("/mysobo/owner/businesses")) },
-    { key: "cd.gs3", done: shared, cover: "/covers/mobile.svg", action: () => (firstLive ? void copyLink(firstLive) : navigate("/mysobo/owner/businesses")) },
-    { key: "cd.gs4", done: posts.length > 0, cover: "/covers/events.svg", action: () => navigate("/mysobo/owner/offers") },
-    { key: "cd.gs5", done: owned.some((item) => planOf(item) !== "free") || Boolean(plans?.requests.length), cover: "/covers/education.svg", action: () => navigate("/mysobo/owner/plans") },
+  const steps: { key: MessageKey; done: boolean; icon: string; action: () => void }[] = [
+    { key: "cd.gs1", done: owned.length > 0, icon: "store", action: () => navigate("/mysobo/owner/add") },
+    { key: "cd.gs2", done: owned.some((item) => listingState(item) !== "draft"), icon: "send", action: () => (firstDraft ? askApproval(firstDraft) : navigate("/mysobo/owner/businesses")) },
+    { key: "cd.gs3", done: shared, icon: "copy", action: () => (firstLive ? void copyLink(firstLive) : navigate("/mysobo/owner/businesses")) },
+    { key: "cd.gs4", done: posts.length > 0, icon: "tag", action: () => navigate("/mysobo/owner/offers") },
+    { key: "cd.gs5", done: owned.some((item) => planOf(item) !== "free") || Boolean(plans?.requests.length), icon: "card", action: () => navigate("/mysobo/owner/plans") },
   ];
   const doneCount = steps.filter((step) => step.done).length;
 
@@ -411,159 +458,296 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
     ...owned.filter((item) => item.approval_requested_at).map((item) => ({ id: `a${item.id}`, icon: "send", when: item.approval_requested_at ?? undefined, title: t("od.act.approval", { name: item.name }), badge: <StateBadge state={listingState(item)} /> })),
   ].sort((x, y) => (y.when ?? "").localeCompare(x.when ?? ""));
 
-  return (
-    <>
-    <OwnerStats owned={owned} />
-    <div className={`cdLayout ${gsHidden ? "noGs" : ""}`}>
-      <section className="cdPanel">
-        <header className="cdHead">
-          <h1>{t("cd.title")}</h1>
-          <div className="cdHeadActions">
-            <Link className="cdBtn outline" to="/mysobo/owner/plans"><Icon name="card" size={16} />{t("cd.managePlans")}</Link>
-            <div className="cdCreate">
-              <button type="button" className="cdBtn dark" aria-expanded={menu} onClick={() => setMenu((open) => !open)}><Icon name="plus" size={16} />{t("cd.create")}<Icon name="chevron" size={14} /></button>
-              {menu && (
-                <div className="cdMenu" role="menu">
-                  <Link role="menuitem" to="/mysobo/owner/add"><span className="wizTileIcon"><Icon name="store" size={16} /></span><span><b>{t("cd.createBusiness")}</b><small>{t("cd.createBusinessHint")}</small></span></Link>
-                  <Link role="menuitem" to="/mysobo/owner/offers"><span className="wizTileIcon"><Icon name="tag" size={16} /></span><span><b>{t("cd.createOffer")}</b><small>{t("cd.createOfferHint")}</small></span></Link>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-        <nav className="cdTabs" role="tablist">
-          {(["listings", "offers", "activity"] as const).map((item) => (
-            <button key={item} type="button" role="tab" aria-selected={tab === item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>
-              {t(item === "listings" ? "cd.tabListings" : item === "offers" ? "cd.tabOffers" : "cd.tabActivity")}
-            </button>
-          ))}
-        </nav>
+  const kpis: { metric: Metric; key: MessageKey; icon: string }[] = [
+    { metric: "view", key: "vf.kViews", icon: "eye" },
+    { metric: "call", key: "vf.kCalls", icon: "phone" },
+    { metric: "whatsapp", key: "vf.kWhatsapp", icon: "chat" },
+  ];
 
-        {tab === "listings" && (
-          <>
-            <label className="cdSearch"><Icon name="search" size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("cd.search")} aria-label={t("cd.search")} /></label>
-            <div className="cdOwnerRow">
-              <span className="odAvatar small">{ownerName.charAt(0).toUpperCase()}</span>
-              <span>{ownerName}</span>
-              {firstLive && <a className="cdLink" href={`/business/${firstLive.slug}`}>{t("cd.viewPage")} <Icon name="ext" size={14} /></a>}
+  return (
+    <div className={`ov ${gsHidden ? "noGs" : ""}`} ref={fit.ref} style={fit.style}>
+      <header className="ovHead">
+        <div>
+          <h1>{t(greetingKey(), { name: firstName })}</h1>
+          <p>{today}</p>
+        </div>
+        <div className="ovHeadActions">
+          <Link className="cdBtn outline" to="/mysobo/owner/plans"><Icon name="card" size={16} />{t("cd.managePlans")}</Link>
+          <div className="cdCreate">
+            <button type="button" className="cdBtn dark" aria-expanded={menu} onClick={() => setMenu((open) => !open)}><Icon name="plus" size={16} />{t("cd.create")}<Icon name="chevron" size={14} /></button>
+            {menu && (
+              <div className="cdMenu" role="menu">
+                <Link role="menuitem" to="/mysobo/owner/add"><span className="wizTileIcon"><Icon name="store" size={16} /></span><span><b>{t("cd.createBusiness")}</b><small>{t("cd.createBusinessHint")}</small></span></Link>
+                <Link role="menuitem" to="/mysobo/owner/offers"><span className="wizTileIcon"><Icon name="tag" size={16} /></span><span><b>{t("cd.createOffer")}</b><small>{t("cd.createOfferHint")}</small></span></Link>
+                <Link role="menuitem" to="/mysobo/owner/photos"><span className="wizTileIcon"><Icon name="image" size={16} /></span><span><b>{t("ov.addPhotos")}</b><small>{t("ov.addPhotosHint")}</small></span></Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <section className="ovKpis" aria-label={t("od.summary")}>
+        {kpis.map((kpi) => {
+          const now = stats?.last14[kpi.metric];
+          const before = stats?.prev14[kpi.metric] ?? 0;
+          const change = now === undefined ? null : before === 0 ? (now > 0 ? "new" : null) : Math.round(((now - before) / before) * 100);
+          return (
+            <article key={kpi.metric} className="ovKpi">
+              <div className="ovKpiTop"><span>{t(kpi.key)}</span><span className="ovKpiIcon"><Icon name={kpi.icon} size={17} /></span></div>
+              <strong>{now ?? "–"}</strong>
+              <small>
+                {change === "new" ? <span className="ovTrend up">{t("ov.new")}</span>
+                  : typeof change === "number" ? <span className={`ovTrend ${change >= 0 ? "up" : "down"}`}>{change >= 0 ? "▲" : "▼"} {Math.abs(change)}%</span>
+                  : null}
+                {t("ov.last14")}
+              </small>
+            </article>
+          );
+        })}
+        <article className="ovKpi">
+          <div className="ovKpiTop"><span>{t("vf.kComplete")}</span><span className="ovKpiIcon"><Icon name="live" size={17} /></span></div>
+          <strong>{completeness}%</strong>
+          <span className="ovMeter" aria-hidden="true"><span style={{ width: `${completeness}%` }} /></span>
+        </article>
+        <Link className="ovCta" to="/mysobo/owner/offers"><Icon name="tag" size={20} /><span>{t("vf.weekendOffer")}</span><Icon name="arrow" size={16} /></Link>
+      </section>
+
+      <div className="ovGrid">
+        <section className="ovCard ovChartCard" aria-labelledby="ov-chart-title">
+          <PerformanceChart daily={stats?.daily} />
+        </section>
+
+        {!gsHidden && (
+          <aside className="ovCard ovGs" aria-label={t("cd.getStarted")}>
+            <div className="ovCardHead">
+              <h2>{t("cd.getStarted")}</h2>
+              <button type="button" className="cdIconBtn" aria-label={t("cd.dontShow")} title={t("cd.dontShow")} onClick={() => { setGsHidden(true); setFlag(GS_HIDE); }}><Icon name="close" size={16} /></button>
             </div>
-            {isLoading ? <p className="mutedText">{t("owner.loading")}</p> : list.length ? (
-              <ul className="cdCards">
+            <div className="ovGsProgress">
+              <span>{t("cd.progress", { done: doneCount, total: steps.length })}</span>
+              <span className="ovMeter"><span style={{ width: `${(doneCount / steps.length) * 100}%` }} /></span>
+            </div>
+            <ul className="ovSteps">
+              {steps.map((step) => (
+                <li key={step.key}>
+                  <button type="button" className={step.done ? "done" : ""} onClick={step.action}>
+                    <span className="ovStepIcon">{step.done ? <Icon name="live" size={16} /> : <Icon name={step.icon} size={16} />}</span>
+                    <span>{t(step.key)}</span>
+                    {!step.done && <Icon name="arrow" size={14} />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )}
+
+        <section className="ovCard ovList">
+          <div className="ovCardHead">
+            <nav className="ovTabs" role="tablist" aria-label={t("cd.title")}>
+              {(["listings", "offers", "activity"] as const).map((item) => (
+                <button key={item} type="button" role="tab" aria-selected={tab === item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>
+                  {tab === item && <motion.span layoutId="ovTabLine" className="ovTabLine" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                  {t(item === "listings" ? "cd.tabListings" : item === "offers" ? "cd.tabOffers" : "cd.tabActivity")}
+                  <em>{item === "listings" ? owned.length : item === "offers" ? posts.length : activity.length}</em>
+                </button>
+              ))}
+            </nav>
+            {tab === "listings" && owned.length > 3 && (
+              <label className="ovSearch"><Icon name="search" size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("cd.search")} aria-label={t("cd.search")} /></label>
+            )}
+          </div>
+          <div className="ovScroll">
+            {tab === "listings" && (isLoading ? <p className="mutedText">{t("owner.loading")}</p> : list.length ? (
+              <ul className="ovRows">
                 {list.map((business) => {
                   const state = listingState(business);
                   return (
-                    <li key={business.id} className={`cdCard ${state}`}>
-                      <img className="cdThumb" src={coverFor(business)} alt="" />
-                      <div className="cdCardText">
-                        <p className="cdCardTitle">{business.name}</p>
-                        <p className="cdCardMeta">{t(`kind.${business.kind}` as MessageKey)} · {business.category?.name ?? t("owner.uncategorized")}{business.review_count ? ` · ★ ${(business.average_rating ?? 0).toFixed(1)}` : ""}</p>
-                        <p className="cdCardMeta"><StateBadge state={state} /> <PlanBadge plan={planOf(business)} /></p>
+                    <li key={business.id} className="ovRow">
+                      <img src={coverFor(business)} alt="" />
+                      <div className="ovRowText">
+                        <p className="ovRowTitle">{business.name}</p>
+                        <p className="ovRowMeta">{business.category?.name ?? t("owner.uncategorized")}{business.review_count ? ` · ★ ${(business.average_rating ?? 0).toFixed(1)}` : ""}</p>
                       </div>
-                      <div className="cdCardActions">
+                      <span className="ovRowBadges"><StateBadge state={state} /><PlanBadge plan={planOf(business)} /></span>
+                      <div className="ovRowActions">
                         {state === "live" ? (
-                          <button type="button" className="cdBtn outline small" onClick={() => void copyLink(business)}><Icon name="copy" size={15} />{copied === business.id ? t("cd.copied") : t("cd.copyLink")}</button>
+                          <button type="button" className="cdBtn outline small" onClick={() => void copyLink(business)}><Icon name="copy" size={14} />{copied === business.id ? t("cd.copied") : t("cd.copyLink")}</button>
                         ) : state === "draft" ? (
-                          <button type="button" className="cdBtn small" onClick={() => askApproval(business)}><Icon name="send" size={15} />{t("od.sendApproval")}</button>
-                        ) : <span className="cdCardMeta">{t("od.waitingShort")}</span>}
-                        <Link className="cdIconBtn" to={`/mysobo/owner/businesses?edit=${business.id}`} aria-label={t("od.editListing")}><Icon name="draft" size={17} /></Link>
+                          <button type="button" className="cdBtn small" onClick={() => askApproval(business)}><Icon name="send" size={14} />{t("od.sendApproval")}</button>
+                        ) : <span className="ovRowMeta">{t("od.waitingShort")}</span>}
+                        <Link className="cdIconBtn" to={`/mysobo/owner/businesses?edit=${business.id}`} aria-label={t("od.editListing")} title={t("od.editListing")}><Icon name="draft" size={16} /></Link>
                       </div>
-                      {firstLive?.id === business.id && !tipDone && (
-                        <div className="cdTip" role="dialog" aria-label={t("cd.tipTitle")}>
-                          <button type="button" className="cdTipClose" aria-label={t("close")} onClick={() => { setTipDone(true); setFlag(TIP_DONE); }}><Icon name="close" size={14} /></button>
-                          <p className="cdTipTitle">{t("cd.tipTitle")}</p>
-                          <p>{t("cd.tipText")}</p>
-                          <div className="cdTipActions">
-                            <Link to="/mysobo/owner/help" className="cdLink">{t("cd.learnMore")}</Link>
-                            <button type="button" className="cdBtn dark small" onClick={() => { setTipDone(true); setFlag(TIP_DONE); }}>{t("cd.gotIt")}</button>
-                          </div>
-                        </div>
-                      )}
                     </li>
                   );
                 })}
               </ul>
-            ) : <Empty text={t("od.emptyListings")} to="add" cta={t("od.nav.add")} />}
-          </>
-        )}
+            ) : owned.length ? <p className="mutedText ovEmpty">{t("ov.noMatch")}</p> : <Empty text={t("od.emptyListings")} to="add" cta={t("od.nav.add")} />)}
 
-        {tab === "offers" && (posts.length ? (
-          <ul className="cdCards">
-            {posts.map((post) => (
-              <li key={post.id} className={`cdCard ${post.status === "approved" ? "live" : post.status === "rejected" ? "draft" : "waiting"}`}>
-                <div className="cdCardText">
-                  <p className="cdCardTitle">{post.title}</p>
-                  <p className="cdCardMeta">{nameOf(post.business)} · {date(post.created_at)}</p>
-                  {post.body && <p className="cdCardMeta">{post.body}</p>}
-                </div>
-                <div className="cdCardActions"><RequestBadge status={post.status} /></div>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="mutedText cdEmptyText">{t("cd.noOffers")}</p>)}
+            {tab === "offers" && (posts.length ? (
+              <ul className="ovRows">
+                {posts.map((post) => (
+                  <li key={post.id} className="ovRow">
+                    <span className="ovRowIcon"><Icon name="tag" size={16} /></span>
+                    <div className="ovRowText">
+                      <p className="ovRowTitle">{post.title}</p>
+                      <p className="ovRowMeta">{nameOf(post.business)} · {date(post.created_at)}</p>
+                    </div>
+                    <span className="ovRowBadges"><RequestBadge status={post.status} /></span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mutedText ovEmpty">{t("cd.noOffers")} <Link className="cdLink" to="/mysobo/owner/offers">{t("vf.weekendOffer")}</Link></p>)}
 
-        {tab === "activity" && (activity.length ? (
-          <ul className="odActivity cdActivity">
-            {activity.map((item) => (
-              <li key={item.id}>
-                <span className="odTileIcon green"><Icon name={item.icon} size={16} /></span>
-                <div><p>{item.title}</p><p className="odRowMeta">{item.badge} {date(item.when)}</p></div>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="mutedText cdEmptyText">{t("od.emptyActivity")}</p>)}
-      </section>
-
-      {!gsHidden && (
-        <aside className="cdGs" aria-label={t("cd.getStarted")}>
-          <div className="cdGsHead">
-            <h2>{t("cd.getStarted")}</h2>
-            <button type="button" className="cdIconBtn" aria-label={t("close")} onClick={() => { setGsHidden(true); setFlag(GS_HIDE); }}><Icon name="close" size={18} /></button>
+            {tab === "activity" && (activity.length ? (
+              <ul className="ovRows">
+                {activity.map((item) => (
+                  <li key={item.id} className="ovRow">
+                    <span className="ovRowIcon"><Icon name={item.icon} size={16} /></span>
+                    <div className="ovRowText"><p className="ovRowTitle">{item.title}</p><p className="ovRowMeta">{date(item.when)}</p></div>
+                    <span className="ovRowBadges">{item.badge}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mutedText ovEmpty">{t("od.emptyActivity")}</p>)}
           </div>
-          <p className="cdGsProgress">{t("cd.progress", { done: doneCount, total: steps.length })}</p>
-          <span className="wizBar wide"><span style={{ width: `${(doneCount / steps.length) * 100}%` }} /></span>
-          <ul>
-            {steps.map((step) => (
-              <li key={step.key}>
-                <button type="button" className={step.done ? "done" : ""} onClick={step.action}>
-                  <img src={step.cover} alt="" />
-                  <span><b>{t(step.key)}</b><small>{step.done ? t("cd.done") : t("cd.task")}</small></span>
-                  {step.done && <span className="cdCheck"><Icon name="live" size={18} /></span>}
-                </button>
-              </li>
-            ))}
+        </section>
+
+        <aside className="ovCard ovPlan">
+          <div className="ovCardHead"><h2>{t("ov.status")}</h2></div>
+          <ul className="ovStatus">
+            <li><b>{counts.live}</b><span>{t("od.state.live")}</span></li>
+            <li><b>{counts.waiting}</b><span>{t("od.state.waiting")}</span></li>
+            <li><b>{counts.draft}</b><span>{t("od.state.draft")}</span></li>
           </ul>
-          <button type="button" className="cdBtn outline small cdDontShow" onClick={() => { setGsHidden(true); setFlag(GS_HIDE); }}>{t("cd.dontShow")}</button>
+          <div className="ovPlanRow">
+            <span><small>{t("ov.plan")}</small><PlanBadge plan={bestPlan} /></span>
+            {bestPlan !== "premium" && <Link className="cdBtn dark small" to="/mysobo/owner/plans"><Icon name="star" size={14} />{t("cd.upgrade")}</Link>}
+          </div>
+          <Link className="ovPhotoNudge" to="/mysobo/owner/photos"><Icon name="image" size={18} /><span>{t("ov.photoNudge")}</span><Icon name="arrow" size={14} /></Link>
         </aside>
-      )}
+      </div>
     </div>
-    </>
   );
 }
 
-function OwnerStats({ owned }: { owned: Business[] }) {
-  const { t } = useT();
-  const { data } = useQuery({ queryKey: ["owner-stats"], queryFn: () => apiGet<{ view: number; call: number; whatsapp: number }>("/owner/stats/") });
-  const fields = (b: Business) => [b.description, b.phone, b.whatsapp, b.address, b.category, (b.hours ?? []).length > 0, b.review_count];
-  const completeness = owned.length
-    ? Math.round(owned.reduce((sum, b) => sum + fields(b).filter(Boolean).length / fields(b).length, 0) / owned.length * 100)
-    : 0;
-  const tiles = [
-    { key: "vf.kViews", value: data?.view, icon: "eye" },
-    { key: "vf.kCalls", value: data?.call, icon: "phone" },
-    { key: "vf.kWhatsapp", value: data?.whatsapp, icon: "chat" },
-    { key: "vf.kComplete", value: `${completeness}%`, icon: "live" },
-  ] as const;
+/** Single-series line/area chart with a metric switch, crosshair tooltip and keyboard support. */
+function PerformanceChart({ daily }: { daily?: DayStat[] }) {
+  const { t, lang } = useT();
+  const [metric, setMetric] = useState<Metric>("view");
+  const [hover, setHover] = useState<number | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 600, h: 200 });
+  useLayoutEffect(() => {
+    const node = boxRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSize({ w: Math.max(240, width), h: Math.max(140, height) });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const locale = lang === "gu" ? "gu-IN" : lang === "hi" ? "hi-IN" : "en-IN";
+  const days = daily ?? [];
+  const values = days.map((day) => day[metric]);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const rawMax = Math.max(0, ...values);
+  const niceMax = (() => {
+    if (rawMax <= 4) return 4;
+    const power = 10 ** Math.floor(Math.log10(rawMax));
+    const step = [1, 2, 2.5, 5, 10].find((s) => s * power * 4 >= rawMax) ?? 10;
+    return step * power * 4;
+  })();
+  const pad = { l: 34, r: 12, t: 12, b: 24 };
+  const iw = size.w - pad.l - pad.r;
+  const ih = size.h - pad.t - pad.b;
+  const x = (i: number) => pad.l + (days.length > 1 ? (i / (days.length - 1)) * iw : iw / 2);
+  const y = (v: number) => pad.t + ih - (v / niceMax) * ih;
+  const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const area = values.length ? `${line} L${x(values.length - 1).toFixed(1)} ${pad.t + ih} L${x(0).toFixed(1)} ${pad.t + ih} Z` : "";
+  const label = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T00:00:00`).toLocaleDateString(locale, opts);
+  const unit: Record<Metric, MessageKey> = { view: "ov.views", call: "ov.calls", whatsapp: "ov.chats" };
+  const stride = size.w < 420 ? 4 : size.w < 620 ? 3 : 2;
+
+  function pick(clientX: number) {
+    const rect = boxRef.current?.getBoundingClientRect();
+    if (!rect || !days.length) return;
+    const rel = clientX - rect.left - pad.l;
+    setHover(Math.max(0, Math.min(days.length - 1, Math.round((rel / iw) * (days.length - 1)))));
+  }
+
   return (
-    <section className="ownStats" aria-label={t("od.summary")}>
-      {tiles.map((tile) => (
-        <article key={tile.key} className="odKpi">
-          <div className="odKpiTop"><span>{t(tile.key)}</span><span className="odTileIcon green"><Icon name={tile.icon} size={18} /></span></div>
-          <strong>{tile.value ?? "–"}</strong>
-          <small>{tile.key === "vf.kComplete" ? t("vf.kCompleteHint") : t("vf.k30")}</small>
-        </article>
-      ))}
-      <Link className="ownStatsCta" to="/mysobo/owner/offers"><Icon name="tag" size={18} />{t("vf.weekendOffer")}</Link>
-    </section>
+    <>
+      <div className="ovCardHead">
+        <div>
+          <h2 id="ov-chart-title">{t("ov.performance")}</h2>
+          <p className="ovCardSub">{t("ov.totalN", { n: total, what: t(unit[metric]) })}</p>
+        </div>
+        <div className="ovSeg" role="radiogroup" aria-label={t("ov.metric")}>
+          {(["view", "call", "whatsapp"] as const).map((key) => (
+            <button key={key} type="button" role="radio" aria-checked={metric === key} className={metric === key ? "on" : ""} onClick={() => { setMetric(key); setHover(null); }}>
+              {metric === key && <motion.span layoutId="ovSegPill" className="ovSegPill" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+              <span>{t(key === "view" ? "vf.kViews" : key === "call" ? "vf.kCalls" : "vf.kWhatsapp")}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div
+        className="ovChart"
+        ref={boxRef}
+        tabIndex={0}
+        role="img"
+        aria-label={t("ov.chartLabel", { n: total, what: t(unit[metric]) })}
+        onPointerMove={(event) => pick(event.clientX)}
+        onPointerLeave={() => setHover(null)}
+        onKeyDown={(event) => {
+          if (!days.length) return;
+          if (event.key === "ArrowRight") { event.preventDefault(); setHover((h) => Math.min(days.length - 1, (h ?? -1) + 1)); }
+          if (event.key === "ArrowLeft") { event.preventDefault(); setHover((h) => Math.max(0, (h ?? days.length) - 1)); }
+          if (event.key === "Escape") setHover(null);
+        }}
+        onBlur={() => setHover(null)}
+      >
+        <svg width={size.w} height={size.h} aria-hidden="true">
+          <defs>
+            <linearGradient id="ovArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#287A4B" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#287A4B" stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <g key={f}>
+              <line x1={pad.l} x2={size.w - pad.r} y1={y(niceMax * f)} y2={y(niceMax * f)} className={f === 0 ? "ovAxis" : "ovGridLine"} />
+              <text x={pad.l - 8} y={y(niceMax * f) + 4} textAnchor="end" className="ovTick">{Math.round(niceMax * f)}</text>
+            </g>
+          ))}
+          {days.map((day, i) => ((i % stride === 0 && days.length - 1 - i >= stride) || i === days.length - 1) && (
+            <text key={day.day} x={x(i)} y={size.h - 6} textAnchor={i === 0 ? "start" : i === days.length - 1 ? "end" : "middle"} className="ovTick">{label(day.day, { day: "numeric", month: "short" })}</text>
+          ))}
+          {values.length > 0 && <path d={area} fill="url(#ovArea)" />}
+          {values.length > 0 && <path d={line} className="ovLine" />}
+          {hover !== null && days[hover] && (
+            <g>
+              <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={pad.t + ih} className="ovCross" />
+              <circle cx={x(hover)} cy={y(values[hover])} r={5} className="ovDot" />
+            </g>
+          )}
+        </svg>
+        {hover !== null && days[hover] && (
+          <div className="ovTip" style={{ left: Math.min(Math.max(x(hover), 70), size.w - 70), top: Math.max(y(values[hover]) - 12, 8) }}>
+            <b>{values[hover]} {t(unit[metric])}</b>
+            <span>{label(days[hover].day, { weekday: "short", day: "numeric", month: "short" })}</span>
+          </div>
+        )}
+        {daily && total === 0 && <p className="ovChartEmpty">{t("ov.chartEmpty")}</p>}
+        <table className="srOnly">
+          <caption>{t("ov.performance")}</caption>
+          <thead><tr><th>{t("ov.day")}</th><th>{t("vf.kViews")}</th><th>{t("vf.kCalls")}</th><th>{t("vf.kWhatsapp")}</th></tr></thead>
+          <tbody>{days.map((day) => <tr key={day.day}><td>{day.day}</td><td>{day.view}</td><td>{day.call}</td><td>{day.whatsapp}</td></tr>)}</tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

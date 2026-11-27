@@ -1063,3 +1063,25 @@ class OwnerPhotoTests(TestCase):
         self.client.delete(f"{self.base}{b}/")
         self.business.refresh_from_db()
         self.assertFalse(self.business.logo)
+
+
+class OwnerStatsSeriesTests(TestCase):
+    def test_daily_series_and_previous_period(self):
+        from datetime import timedelta
+        owner = User.objects.create_user(username="stats-owner", password="x")
+        business = Business.objects.create(name="Stats Shop", slug="stats-shop", kind="service", source="owner")
+        other = Business.objects.create(name="Other", slug="other-stats", kind="service", source="owner")
+        BusinessMember.objects.create(user=owner, business=business, role="owner")
+        now = timezone.now()
+        for days_ago, kind in [(0, "view"), (0, "view"), (1, "call"), (3, "whatsapp"), (20, "view")]:
+            event = Event.objects.create(business=business, type=kind)
+            Event.objects.filter(pk=event.pk).update(created_at=now - timedelta(days=days_ago))
+        Event.objects.create(business=other, type="view")  # not this owner's
+        client = APIClient()
+        client.force_authenticate(owner)
+        body = client.get("/api/owner/stats/").json()
+        self.assertEqual(len(body["daily"]), 14)
+        self.assertEqual(body["daily"][-1]["view"], 2)
+        self.assertEqual(body["last14"], {"view": 2, "call": 1, "whatsapp": 1})
+        self.assertEqual(body["prev14"]["view"], 1)
+        self.assertEqual(body["view"], 3)

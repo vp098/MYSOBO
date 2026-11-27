@@ -1,5 +1,5 @@
-import { LeafMark, Logo, PinScene } from "./logo";
-import React, { useEffect, useRef, useState } from "react";
+
+import { useEffect, useRef, useState } from "react";
 import { apiPost } from "./services/api";
 import { useT } from "./i18n";
 
@@ -76,90 +76,14 @@ export function GoogleSignIn({ onSuccess }: { onSuccess: () => void }) {
     return () => { cancelled = true; };
   }, [lang, onSuccess, t]);
 
-  if (!GOOGLE_CLIENT_ID) {
-    return <p className="formError">{t("login.googleMissing")}</p>;
-  }
+  // Google sign-in is optional: without a client id it simply does not show.
+  if (!GOOGLE_CLIENT_ID) return null;
   return (
     <div className="googleSignIn">
       <div ref={holder} className="googleButtonHolder" aria-busy={pending} />
       {pending && <p className="mutedText">{t("login.signingIn")}</p>}
       {error && <p className="formError">{error}</p>}
       <p className="googleConsent">{t("login.googleConsent")}</p>
-    </div>
-  );
-}
-
-/* Preview sign-in: any email, no verification (VITE_DEMO_LOGIN=true). */
-export const DEMO_LOGIN_ENABLED = import.meta.env.VITE_DEMO_LOGIN === "true";
-
-export function EmailSignIn({ startWith = "signup", onSuccess, onPassword }: {
-  startWith?: "signup" | "login";
-  onSuccess: () => void;
-  onPassword: () => void;
-}) {
-  const { t } = useT();
-  const [kind, setKind] = useState(startWith);
-  const [email, setEmail] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const signup = kind === "signup";
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setPending(true);
-    try {
-      const response = await apiPost<{ token: string }>("/auth/demo-email/", { email: email.trim() });
-      sessionStorage.setItem("mysobo-token", response.token);
-      onSuccess();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("err.login"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="authScreenBody">
-      <div className="authHero"><PinScene /></div>
-      <aside className="authAside">
-        <span className="authAsideChip"><LeafMark size={16} />{t("auth.asideChip")}</span>
-        <h2>{t("auth.asideTitle")}</h2>
-        <ul className="authPerks">
-          <li>{t("auth.perk1")}</li>
-          <li>{t("auth.perk2")}</li>
-          <li>{t("auth.perk3")}</li>
-          <li>{t("auth.perk4")}</li>
-        </ul>
-        <div className="authAsideMap"><PinScene /></div>
-        <p className="authAsideFoot">{t("auth.asideFoot")}</p>
-      </aside>
-      <div className="authSheet">
-      <div className="authBrand"><Logo size={34} /></div>
-      <h1 id="login-title" className="authSub">{signup ? t("auth.signupSub") : t("auth.loginSub")}</h1>
-      <form className="authBox" onSubmit={submit}>
-        <input type="email" name="email" autoComplete="email" inputMode="email" required aria-label={t("login.email")} placeholder={t("auth.emailPh")} value={email} onChange={(event) => setEmail(event.target.value)} />
-        {error && <p className="formError">{error}</p>}
-        <button className="obBtn lpWide" type="submit" disabled={pending || !email.includes("@")}>{pending ? t("login.signingIn") : signup ? t("auth.getStarted") : t("login.continue")}</button>
-        {GOOGLE_CLIENT_ID && (
-          <>
-            <div className="authOr"><span>{t("auth.or")}</span></div>
-            <GoogleSignIn onSuccess={onSuccess} />
-          </>
-        )}
-        <p className="authSwitch">
-          {signup ? t("auth.haveAccount") : t("auth.noAccount")}{" "}
-          <button type="button" className="authLink" onClick={() => { setKind(signup ? "login" : "signup"); setError(""); }}>{signup ? t("auth.logIn") : t("auth.signUp")}</button>
-        </p>
-      </form>
-      <ul className="authPerks authPerksMobile">
-        <li>{t("auth.perk1")}</li>
-        <li>{t("auth.perk2")}</li>
-        <li>{t("auth.perk3")}</li>
-      </ul>
-      <p className="googleConsent">{t("login.googleConsent")}</p>
-      <button type="button" className="authAdmin" onClick={onPassword}>{t("login.usePassword")}</button>
-      </div>
     </div>
   );
 }
