@@ -10,8 +10,10 @@ from rest_framework import serializers, status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from .google import GoogleTokenError, verify_google_credential
 from .models import OTPChallenge, Profile, User
 from .otp import (
     OTPDeliveryError,
@@ -185,5 +187,109 @@ class OTPVerifyView(APIView):
         profile.save(
             update_fields=("consent_at", "consent_version", "mobile")
         )
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({"token": token.key})
+
+
+class GoogleLoginThrottle(ScopedRateThrottle):
+    scope = "google_login"
+
+
+class GoogleLoginView(APIView):
+    """Exchange a Google ID token ("credential") for a MySobo API token."""
+
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = (GoogleLoginThrottle,)
+
+    @transaction.atomic
+    def post(self, request):
+        if not settings.GOOGLE_CLIENT_ID:
+            return Response(
+                {"detail": "Google sign-in is not set up yet."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        try:
+            claims = verify_google_credential(str(request.data.get("credential", "")))
+        except GoogleTokenError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = claims["email"].strip().lower()
+        user = User.objects.select_for_update().filter(email__iexact=email).order_by("date_joined").first()
+        if user is None:
+            user = User.objects.create_user(
+                username=f"google-{claims['sub']}"[:150],
+                email=email,
+                first_name=str(claims.get("given_name", ""))[:150],
+                last_name=str(claims.get("family_name", ""))[:150],
+            )
+            user.set_unusable_password()
+            user.save(update_fields=("password",))
+        set_authenticated_user_rls_context(user.pk)
+        if not user.is_active:
+            return Response(
+                {"detail": "This account cannot sign in. Contact support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        profile = Profile.objects.filter(id=user).first()
+        if profile and profile.deleted_at is not None:
+            return Response(
+                {"detail": "This account cannot sign in. Contact support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if profile is None:
+            profile = Profile.objects.create(id=user, name=str(claims.get("name", ""))[:200])
+        if profile.consent_at is None:
+            profile.consent_at = timezone.now()
+            profile.consent_version = "google-signin"
+            profile.save(update_fields=("consent_at", "consent_version"))
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({"token": token.key})
+
+
+class DemoLoginThrottle(ScopedRateThrottle):
+    scope = "demo_login"
+
+
+class DemoEmailLoginView(APIView):
+    """Preview-only sign-in: any email logs in without verification.
+
+    Enabled only when DEMO_EMAIL_LOGIN=true. Never signs into staff or admin
+    accounts. Turn it off before launch.
+    """
+
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = (DemoLoginThrottle,)
+
+    @transaction.atomic
+    def post(self, request):
+        if not settings.DEMO_EMAIL_LOGIN:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        email = str(request.data.get("email", "")).strip().lower()
+        try:
+            serializers.EmailField().run_validation(email)
+        except serializers.ValidationError:
+            return Response({"detail": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.select_for_update().filter(email__iexact=email).order_by("date_joined").first()
+        if user and (user.is_staff or user.is_superuser or user.admin_roles.exists()):
+            return Response(
+                {"detail": "Admin accounts must sign in with their password."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if user is None:
+            parts = [part for part in email.split("@")[0].replace("_", ".").replace("-", ".").split(".") if part.isalpha()]
+            user = User.objects.create_user(
+                username=f"demo-{uuid.uuid4().hex[:10]}",
+                email=email,
+                first_name=(parts[0].title() if parts else "")[:150],
+                last_name=(" ".join(parts[1:]).title())[:150],
+            )
+            user.set_unusable_password()
+            user.save(update_fields=("password",))
+        if not user.is_active:
+            return Response({"detail": "This account cannot sign in."}, status=status.HTTP_403_FORBIDDEN)
+        set_authenticated_user_rls_context(user.pk)
+        Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})

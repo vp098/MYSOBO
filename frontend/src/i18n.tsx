@@ -1,0 +1,861 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
+/*
+ * MySobo translations. Gujarati is the default language.
+ * Each entry is [English, Gujarati, Hindi]. Use {name}-style placeholders
+ * for values filled in at runtime: t("listings.count", { n: 4 }).
+ */
+export type Lang = "gu" | "en" | "hi";
+
+export const LANGUAGES: { code: Lang; short: string; label: string }[] = [
+  { code: "gu", short: "ગુ", label: "ગુજરાતી" },
+  { code: "en", short: "EN", label: "English" },
+  { code: "hi", short: "हि", label: "हिंदी" },
+];
+
+const DEFAULT_LANG: Lang = "gu";
+const STORAGE_KEY = "mysobo-lang";
+
+const messages = {
+  // Top bar and shared
+  "nav.residents": ["Residents", "રહેવાસીઓ", "निवासी"],
+  "nav.business": ["For businesses", "વ્યવસાય માટે", "व्यवसाय के लिए"],
+  "nav.superadmin": ["Super admin", "સુપર એડમિન", "सुपर एडमिन"],
+  "nav.login": ["Log in", "લૉગ ઇન", "लॉग इन"],
+  "nav.logout": ["Log out", "લૉગ આઉટ", "लॉग आउट"],
+  "nav.home": ["MySobo home", "MySobo હોમ", "MySobo होम"],
+  "lang.label": ["Language", "ભાષા", "भाषा"],
+  "install.button": ["Install app", "એપ ઇન્સ્ટોલ કરો", "ऐप इंस्टॉल करें"],
+  "install.iosTitle": ["Add MySobo to your Home Screen", "MySobo ને હોમ સ્ક્રીન પર ઉમેરો", "MySobo को होम स्क्रीन पर जोड़ें"],
+  "install.iosStep1": ["Tap the Share button at the bottom of Safari.", "Safari ની નીચે શેર બટન દબાવો.", "Safari में नीचे शेयर बटन दबाएँ।"],
+  "install.iosStep2": ["Choose “Add to Home Screen”.", "“Add to Home Screen” પસંદ કરો.", "“Add to Home Screen” चुनें।"],
+  "install.iosStep3": ["Tap Add. MySobo opens straight to your local directory.", "Add દબાવો. MySobo સીધું તમારી સ્થાનિક ડિરેક્ટરી ખોલશે.", "Add दबाएँ। MySobo सीधे आपकी स्थानीय डायरेक्टरी खोलेगा।"],
+  "close": ["Close", "બંધ કરો", "बंद करें"],
+  "tryAgain": ["Try again", "ફરી પ્રયાસ કરો", "फिर कोशिश करें"],
+  "retry": ["Retry", "ફરી પ્રયાસ", "फिर कोशिश"],
+  "any": ["Any", "કોઈપણ", "कोई भी"],
+  "yes": ["Yes", "હા", "हाँ"],
+  "no": ["No", "ના", "नहीं"],
+  "kind.service": ["Service", "સેવા", "सेवा"],
+  "kind.product": ["Product", "ઉત્પાદન", "उत्पाद"],
+  "kind.both": ["Both", "બંને", "दोनों"],
+  "listings.count": ["{n} listings", "{n} લિસ્ટિંગ", "{n} लिस्टिंग"],
+  "err.logout": ["Could not log out.", "લૉગ આઉટ થઈ શક્યું નહીં.", "लॉग आउट नहीं हो सका।"],
+  "err.request": ["The request failed.", "વિનંતી નિષ્ફળ ગઈ.", "अनुरोध विफल रहा।"],
+  "err.checkApi": ["Check the connection and try again.", "કનેક્શન તપાસો અને ફરી પ્રયાસ કરો.", "कनेक्शन जाँचें और फिर कोशिश करें।"],
+
+  // Login
+  "login.eyebrow": ["Residents and business owners", "રહેવાસીઓ અને વ્યવસાય માલિકો", "निवासी और व्यवसाय मालिक"],
+  "login.title": ["Log in to MySobo", "MySobo માં લૉગ ઇન કરો", "MySobo में लॉग इन करें"],
+  "login.intro": ["Sign in with a one-time code sent to your mobile number.", "તમારા મોબાઇલ નંબર પર મોકલેલા એક વખતના કોડથી સાઇન ઇન કરો.", "अपने मोबाइल नंबर पर भेजे गए वन-टाइम कोड से साइन इन करें।"],
+  "login.enterCode": ["Enter the 6-digit code sent to {mobile}.", "{mobile} પર મોકલેલો 6 અંકનો કોડ દાખલ કરો.", "{mobile} पर भेजा गया 6 अंकों का कोड दर्ज करें।"],
+  "login.code": ["Verification code", "ચકાસણી કોડ", "सत्यापन कोड"],
+  "login.verifying": ["Verifying…", "ચકાસી રહ્યા છીએ…", "सत्यापित कर रहे हैं…"],
+  "login.verify": ["Verify and sign in", "ચકાસો અને સાઇન ઇન કરો", "सत्यापित करें और साइन इन करें"],
+  "login.changeNumber": ["Change number", "નંબર બદલો", "नंबर बदलें"],
+  "login.resendIn": ["Resend in {s}s", "{s} સેકન્ડમાં ફરી મોકલો", "{s} सेकंड में फिर भेजें"],
+  "login.resend": ["Resend code", "કોડ ફરી મોકલો", "कोड फिर भेजें"],
+  "login.mobile": ["Mobile number", "મોબાઇલ નંબર", "मोबाइल नंबर"],
+  "login.mobilePh": ["10-digit mobile number", "10 અંકનો મોબાઇલ નંબર", "10 अंकों का मोबाइल नंबर"],
+  "login.consent": ["I agree to MySobo's terms and privacy policy.", "હું MySobo ની શરતો અને ગોપનીયતા નીતિ સાથે સંમત છું.", "मैं MySobo की शर्तों और गोपनीयता नीति से सहमत हूँ।"],
+  "login.sending": ["Sending code…", "કોડ મોકલી રહ્યા છીએ…", "कोड भेज रहे हैं…"],
+  "login.send": ["Send verification code", "ચકાસણી કોડ મોકલો", "सत्यापन कोड भेजें"],
+  "login.username": ["Username", "યુઝરનેમ", "यूज़रनेम"],
+  "login.password": ["Password", "પાસવર્ડ", "पासवर्ड"],
+  "login.signingIn": ["Signing in…", "સાઇન ઇન થઈ રહ્યું છે…", "साइन इन हो रहा है…"],
+  "login.withPassword": ["Sign in with password", "પાસવર્ડથી સાઇન ઇન કરો", "पासवर्ड से साइन इन करें"],
+  "login.usePassword": ["Use username and password instead", "તેના બદલે યુઝરનેમ અને પાસવર્ડ વાપરો", "इसके बजाय यूज़रनेम और पासवर्ड इस्तेमाल करें"],
+  "login.useOtp": ["Use a one-time code instead", "તેના બદલે એક વખતનો કોડ વાપરો", "इसके बजाय वन-टाइम कोड इस्तेमाल करें"],
+  "err.sendCode": ["Could not send a verification code.", "ચકાસણી કોડ મોકલી શકાયો નહીં.", "सत्यापन कोड नहीं भेजा जा सका।"],
+  "err.verify": ["Could not verify this code.", "આ કોડ ચકાસી શકાયો નહીં.", "यह कोड सत्यापित नहीं हो सका।"],
+  "err.login": ["Unable to log in.", "લૉગ ઇન થઈ શક્યું નહીં.", "लॉग इन नहीं हो सका।"],
+
+  // Search and cards
+  "search.placeholder": ["Search by service, business or area", "સેવા, વ્યવસાય અથવા વિસ્તાર શોધો", "सेवा, व्यवसाय या इलाका खोजें"],
+  "search.label": ["Search MySobo", "MySobo માં શોધો", "MySobo में खोजें"],
+  "search.button": ["Search", "શોધો", "खोजें"],
+  "cards.noneTitle": ["No listings found", "કોઈ લિસ્ટિંગ મળ્યું નથી", "कोई लिस्टिंग नहीं मिली"],
+  "cards.noneText": ["Try a different search or category.", "બીજી શોધ અથવા કેટેગરી અજમાવો.", "कोई दूसरी खोज या श्रेणी आज़माएँ।"],
+  "cards.open": ["Open {name} listing", "{name} લિસ્ટિંગ ખોલો", "{name} लिस्टिंग खोलें"],
+  "cards.inSouthBopal": ["{kind} in South Bopal", "સાઉથ બોપલમાં {kind}", "साउथ बोपल में {kind}"],
+  "cards.localService": ["Local service", "સ્થાનિક સેવા", "स्थानीय सेवा"],
+  "cards.from": ["From ₹{price}", "₹{price} થી શરૂ", "₹{price} से शुरू"],
+
+  // Listing dialog
+  "listing.dialog": ["Business details", "વ્યવસાયની વિગતો", "व्यवसाय का विवरण"],
+  "listing.loading": ["Loading business…", "વ્યવસાય લોડ થઈ રહ્યો છે…", "व्यवसाय लोड हो रहा है…"],
+  "listing.defaultCategory": ["South Bopal business", "સાઉથ બોપલનો વ્યવસાય", "साउथ बोपल का व्यवसाय"],
+  "listing.defaultDesc": ["Trusted local listing in South Bopal.", "સાઉથ બોપલમાં વિશ્વસનીય સ્થાનિક લિસ્ટિંગ.", "साउथ बोपल में भरोसेमंद स्थानीय लिस्टिंग।"],
+  "listing.call": ["Call", "કૉલ કરો", "कॉल करें"],
+  "listing.callName": ["Call {name}", "{name} ને કૉલ કરો", "{name} को कॉल करें"],
+  "listing.whatsapp": ["WhatsApp", "વોટ્સએપ", "व्हाट्सऐप"],
+  "listing.whatsappName": ["WhatsApp {name}", "{name} ને વોટ્સએપ કરો", "{name} को व्हाट्सऐप करें"],
+  "listing.save": ["Save", "સેવ કરો", "सेव करें"],
+  "listing.saved": ["Saved", "સેવ કરેલું", "सेव किया"],
+  "listing.phone": ["Phone", "ફોન", "फ़ोन"],
+  "listing.email": ["Email", "ઇમેઇલ", "ईमेल"],
+  "listing.website": ["Website", "વેબસાઇટ", "वेबसाइट"],
+  "listing.reviews": ["Resident reviews", "રહેવાસીઓના રિવ્યૂ", "निवासियों की समीक्षाएँ"],
+  "listing.noReviews": ["No reviews yet. Share the first one.", "હજી કોઈ રિવ્યૂ નથી. પહેલો રિવ્યૂ આપો.", "अभी कोई समीक्षा नहीं। पहली समीक्षा लिखें।"],
+  "listing.rating": ["Rating", "રેટિંગ", "रेटिंग"],
+  "listing.stars": ["{n} stars", "{n} સ્ટાર", "{n} स्टार"],
+  "listing.yourReview": ["Your review", "તમારો રિવ્યૂ", "आपकी समीक्षा"],
+  "listing.reviewPh": ["How was your experience?", "તમારો અનુભવ કેવો રહ્યો?", "आपका अनुभव कैसा रहा?"],
+  "listing.post": ["Post review", "રિવ્યૂ પોસ્ટ કરો", "समीक्षा पोस्ट करें"],
+  "listing.unavailable": ["Listing unavailable", "લિસ્ટિંગ ઉપલબ્ધ નથી", "लिस्टिंग उपलब्ध नहीं"],
+  "listing.removed": ["Removed from saved businesses.", "સેવ કરેલા વ્યવસાયોમાંથી દૂર કર્યું.", "सेव किए गए व्यवसायों से हटाया गया।"],
+  "listing.savedMsg": ["Business saved.", "વ્યવસાય સેવ થયો.", "व्यवसाय सेव हो गया।"],
+  "listing.thanks": ["Thanks for sharing your review.", "તમારો રિવ્યૂ આપવા બદલ આભાર.", "अपनी समीक्षा साझा करने के लिए धन्यवाद।"],
+  "err.save": ["Could not save this business.", "આ વ્યવસાય સેવ થઈ શક્યો નહીં.", "यह व्यवसाय सेव नहीं हो सका।"],
+  "err.review": ["Could not submit your review.", "તમારો રિવ્યૂ મોકલી શકાયો નહીં.", "आपकी समीक्षा भेजी नहीं जा सकी।"],
+  "err.contact": ["Could not record this contact action.", "આ સંપર્ક નોંધી શકાયો નહીં.", "यह संपर्क दर्ज नहीं हो सका।"],
+
+  // Resident home
+  "home.place": ["South Bopal, Ahmedabad", "સાઉથ બોપલ, અમદાવાદ", "साउथ बोपल, अहमदाबाद"],
+  "home.title1": ["Find trusted help,", "વિશ્વસનીય મદદ,", "भरोसेमंद मदद,"],
+  "home.title2": ["close to home.", "ઘરની નજીક.", "घर के पास।"],
+  "home.tabsLabel": ["Browse services or products", "સેવાઓ અથવા ઉત્પાદનો જુઓ", "सेवाएँ या उत्पाद देखें"],
+  "tab.all": ["All listings", "બધું", "सभी लिस्टिंग"],
+  "tab.service": ["Services", "સેવાઓ", "सेवाएँ"],
+  "tab.product": ["Products", "ઉત્પાદનો", "उत्पाद"],
+  "hero.top": ["South Bopal", "સાઉથ બોપલ", "साउथ बोपल"],
+  "hero.big": ["Local", "સ્થાનિક", "स्थानीय"],
+  "hero.bottom": ["and trusted", "અને વિશ્વસનીય", "और भरोसेमंद"],
+  "home.browseLocal": ["Browse local", "સ્થાનિક જુઓ", "स्थानीय देखें"],
+  "home.popular": ["Popular categories", "લોકપ્રિય કેટેગરી", "लोकप्रिय श्रेणियाँ"],
+  "home.clearCategory": ["Clear category ×", "કેટેગરી દૂર કરો ×", "श्रेणी हटाएँ ×"],
+  "home.allIn": ["All {name}", "બધું: {name}", "सभी {name}"],
+  "home.subLabel": ["{name} subcategories", "{name} ની પેટા કેટેગરી", "{name} की उप-श्रेणियाँ"],
+  "err.categories": ["Could not load categories. Check the connection and try again.", "કેટેગરી લોડ થઈ શકી નહીં. કનેક્શન તપાસો અને ફરી પ્રયાસ કરો.", "श्रेणियाँ लोड नहीं हो सकीं। कनेक्शन जाँचें और फिर कोशिश करें।"],
+  "home.loadingCats": ["Loading categories…", "કેટેગરી લોડ થઈ રહી છે…", "श्रेणियाँ लोड हो रही हैं…"],
+  "home.noCats": ["No categories are configured for this listing type yet.", "આ પ્રકાર માટે હજી કોઈ કેટેગરી નથી.", "इस प्रकार के लिए अभी कोई श्रेणी नहीं है।"],
+  "home.eyCategory": ["Category listings", "કેટેગરીના લિસ્ટિંગ", "श्रेणी की लिस्टिंग"],
+  "home.eyServiceCat": ["Service category listings", "સેવા કેટેગરીના લિસ્ટિંગ", "सेवा श्रेणी की लिस्टिंग"],
+  "home.eyProductCat": ["Product category listings", "ઉત્પાદન કેટેગરીના લિસ્ટિંગ", "उत्पाद श्रेणी की लिस्टिंग"],
+  "home.eyShop": ["Shop local", "સ્થાનિક ખરીદી કરો", "स्थानीय खरीदारी करें"],
+  "home.eyFind": ["Find a service", "સેવા શોધો", "सेवा खोजें"],
+  "home.eyBrowse": ["Browse local listings", "સ્થાનિક લિસ્ટિંગ જુઓ", "स्थानीय लिस्टिंग देखें"],
+  "home.searchResult": ["Search: {q}", "શોધ: {q}", "खोज: {q}"],
+  "home.trusted": ["Trusted nearby", "નજીકના વિશ્વસનીય", "पास के भरोसेमंद"],
+  "home.finding": ["Finding local businesses…", "સ્થાનિક વ્યવસાયો શોધી રહ્યા છીએ…", "स्थानीय व्यवसाय खोज रहे हैं…"],
+  "err.listingsTitle": ["Could not load listings", "લિસ્ટિંગ લોડ થઈ શક્યા નહીં", "लिस्टिंग लोड नहीं हो सकीं"],
+  "empty.namedTitle": ["No {name} listings yet", "{name} માં હજી કોઈ લિસ્ટિંગ નથી", "{name} में अभी कोई लिस्टिंग नहीं"],
+  "empty.allTitle": ["No local listings yet", "હજી કોઈ સ્થાનિક લિસ્ટિંગ નથી", "अभी कोई स्थानीय लिस्टिंग नहीं"],
+  "empty.serviceTitle": ["No service listings yet", "હજી કોઈ સેવા લિસ્ટિંગ નથી", "अभी कोई सेवा लिस्टिंग नहीं"],
+  "empty.productTitle": ["No product listings yet", "હજી કોઈ ઉત્પાદન લિસ્ટિંગ નથી", "अभी कोई उत्पाद लिस्टिंग नहीं"],
+  "empty.selectionText": ["There are no businesses in this selection yet. Try another category or check back soon.", "આ પસંદગીમાં હજી કોઈ વ્યવસાય નથી. બીજી કેટેગરી અજમાવો અથવા થોડા સમય પછી ફરી જુઓ.", "इस चयन में अभी कोई व्यवसाय नहीं है। दूसरी श्रेणी आज़माएँ या जल्द फिर देखें।"],
+  "empty.searchText": ["Try a different search term.", "બીજો શબ્દ શોધી જુઓ.", "कोई दूसरा शब्द खोजें।"],
+  "empty.allText": ["There are no local businesses to show yet.", "હજી બતાવવા માટે કોઈ સ્થાનિક વ્યવસાય નથી.", "अभी दिखाने के लिए कोई स्थानीय व्यवसाय नहीं है।"],
+  "empty.serviceText": ["There are no local service businesses to show yet.", "હજી કોઈ સ્થાનિક સેવા નથી.", "अभी कोई स्थानीय सेवा नहीं है।"],
+  "empty.productText": ["There are no local product businesses to show yet.", "હજી કોઈ સ્થાનિક ઉત્પાદન નથી.", "अभी कोई स्थानीय उत्पाद नहीं है।"],
+  "home.browseAll": ["Browse all categories", "બધી કેટેગરી જુઓ", "सभी श्रेणियाँ देखें"],
+
+  // Category page
+  "cat.home": ["Home", "હોમ", "होम"],
+  "cat.category": ["Category", "કેટેગરી", "श्रेणी"],
+  "cat.breadcrumb": ["Page path", "પેજનો માર્ગ", "पेज पथ"],
+  "cat.loading": ["Loading category…", "કેટેગરી લોડ થઈ રહી છે…", "श्रेणी लोड हो रही है…"],
+  "cat.loadError": ["Could not load this category.", "આ કેટેગરી લોડ થઈ શકી નહીં.", "यह श्रेणी लोड नहीं हो सकी।"],
+  "cat.notFound": ["Category not found", "કેટેગરી મળી નથી", "श्रेणी नहीं मिली"],
+  "cat.removed": ["This category or subcategory may have been removed.", "આ કેટેગરી અથવા પેટા કેટેગરી કદાચ દૂર કરવામાં આવી છે.", "यह श्रेणी या उप-श्रेणी शायद हटा दी गई है।"],
+  "cat.browseCategories": ["Browse categories", "કેટેગરી જુઓ", "श्रेणियाँ देखें"],
+  "cat.eyAll": ["Local listings", "સ્થાનિક લિસ્ટિંગ", "स्थानीय लिस्टिंग"],
+  "cat.eyService": ["Local services", "સ્થાનિક સેવાઓ", "स्थानीय सेवाएँ"],
+  "cat.eyProduct": ["Local products", "સ્થાનિક ઉત્પાદનો", "स्थानीय उत्पाद"],
+  "cat.active": ["{n} active listings", "{n} સક્રિય લિસ્ટિંગ", "{n} सक्रिय लिस्टिंग"],
+  "cat.moreIn": ["More in {name}", "{name} માં વધુ", "{name} में और"],
+  "cat.browseName": ["Browse {name}", "{name} જુઓ", "{name} देखें"],
+  "cat.filterTitle": ["Search and filter", "શોધો અને ફિલ્ટર કરો", "खोजें और फ़िल्टर करें"],
+  "cat.search": ["Search", "શોધો", "खोजें"],
+  "cat.searchPh": ["Search {name}", "{name} માં શોધો", "{name} में खोजें"],
+  "cat.location": ["Location", "સ્થાન", "स्थान"],
+  "cat.locationPh": ["Area or locality", "વિસ્તાર અથવા સોસાયટી", "इलाका या मोहल्ला"],
+  "cat.sort": ["Sort by", "આ મુજબ ગોઠવો", "इसके अनुसार क्रम"],
+  "sort.relevance": ["Most relevant", "સૌથી સંબંધિત", "सबसे प्रासंगिक"],
+  "sort.rating": ["Highest rated", "સૌથી વધુ રેટિંગ", "सबसे ज़्यादा रेटिंग"],
+  "sort.recent": ["Recently added", "તાજેતરમાં ઉમેરાયેલ", "हाल ही में जोड़े गए"],
+  "sort.alpha": ["Alphabetical", "અક્ષરક્રમ મુજબ", "वर्णानुक्रम"],
+  "sort.priceLow": ["Price: low to high", "કિંમત: ઓછીથી વધુ", "कीमत: कम से ज़्यादा"],
+  "sort.priceHigh": ["Price: high to low", "કિંમત: વધુથી ઓછી", "कीमत: ज़्यादा से कम"],
+  "cat.minRating": ["Minimum rating", "ઓછામાં ઓછું રેટિંગ", "न्यूनतम रेटिंग"],
+  "cat.anyRating": ["Any rating", "કોઈપણ રેટિંગ", "कोई भी रेटिंग"],
+  "cat.starsPlus": ["{n}+ stars", "{n}+ સ્ટાર", "{n}+ स्टार"],
+  "cat.minPrice": ["Minimum price", "ઓછામાં ઓછી કિંમત", "न्यूनतम कीमत"],
+  "cat.maxPrice": ["Maximum price", "વધુમાં વધુ કિંમત", "अधिकतम कीमत"],
+  "cat.apply": ["Apply filters", "ફિલ્ટર લાગુ કરો", "फ़िल्टर लागू करें"],
+  "cat.clearAll": ["Clear all", "બધું સાફ કરો", "सब हटाएँ"],
+  "cat.matchingAll": ["Matching businesses", "મેળ ખાતા વ્યવસાયો", "मिलते-जुलते व्यवसाय"],
+  "cat.matchingService": ["Matching service listings", "મેળ ખાતી સેવાઓ", "मिलती-जुलती सेवाएँ"],
+  "cat.matchingProduct": ["Matching product listings", "મેળ ખાતા ઉત્પાદનો", "मिलते-जुलते उत्पाद"],
+  "cat.results": ["{n} results", "{n} પરિણામ", "{n} परिणाम"],
+  "cat.finding": ["Finding matching listings…", "મેળ ખાતા લિસ્ટિંગ શોધી રહ્યા છીએ…", "मिलती-जुलती लिस्टिंग खोज रहे हैं…"],
+  "cat.listingsError": ["Could not load listings.", "લિસ્ટિંગ લોડ થઈ શક્યા નહીં.", "लिस्टिंग लोड नहीं हो सकीं।"],
+  "cat.pages": ["Listing pages", "લિસ્ટિંગનાં પાનાં", "लिस्टिंग पेज"],
+  "cat.prev": ["Previous", "પાછળ", "पिछला"],
+  "cat.next": ["Next", "આગળ", "अगला"],
+  "cat.pageOf": ["Page {page} of {total}", "પાનું {page} / {total}", "पेज {page} / {total}"],
+  "cat.emptyTitle": ["No listings available in this category yet.", "આ કેટેગરીમાં હજી કોઈ લિસ્ટિંગ નથી.", "इस श्रेणी में अभी कोई लिस्टिंग नहीं है।"],
+  "cat.emptySub": ["There are no matching listings in {name} yet.", "{name} માં હજી કોઈ મેળ ખાતું લિસ્ટિંગ નથી.", "{name} में अभी कोई मिलती-जुलती लिस्टिंग नहीं है।"],
+  "cat.checkBack": ["Please check back soon.", "થોડા સમય પછી ફરી જુઓ.", "कृपया जल्द फिर देखें।"],
+  "cat.returnTo": ["Return to {name}", "{name} પર પાછા જાઓ", "{name} पर वापस जाएँ"],
+
+  // Owner portal
+  "owner.loading": ["Loading your listings…", "તમારા લિસ્ટિંગ લોડ થઈ રહ્યા છે…", "आपकी लिस्टिंग लोड हो रही है…"],
+  "owner.uncategorized": ["Uncategorized", "કેટેગરી વગર", "बिना श्रेणी"],
+  "owner.addBusiness": ["Add your business", "તમારો વ્યવસાય ઉમેરો", "अपना व्यवसाय जोड़ें"],
+  "owner.postOffer": ["Post an offer", "ઓફર મૂકો", "ऑफ़र डालें"],
+  "owner.business": ["Business", "વ્યવસાય", "व्यवसाय"],
+  "owner.chooseListing": ["Choose listing", "લિસ્ટિંગ પસંદ કરો", "लिस्टिंग चुनें"],
+  "owner.offerTitle": ["Offer title", "ઓફરનું શીર્ષક", "ऑफ़र का शीर्षक"],
+  "owner.details": ["Details", "વિગતો", "विवरण"],
+  "owner.submitOffer": ["Submit offer", "ઓફર મોકલો", "ऑफ़र भेजें"],
+  "owner.offerSent": ["Offer sent for review.", "ઓફર ચકાસણી માટે મોકલાઈ.", "ऑफ़र समीक्षा के लिए भेजा गया।"],
+  "owner.planSubmitted": ["Plan request submitted for approval.", "પ્લાન વિનંતી મંજૂરી માટે મોકલાઈ.", "प्लान अनुरोध मंज़ूरी के लिए भेजा गया।"],
+  "owner.updated": ["Listing details updated.", "લિસ્ટિંગની વિગતો અપડેટ થઈ.", "लिस्टिंग का विवरण अपडेट हुआ।"],
+
+  // Listing forms
+  "form.category": ["Category", "કેટેગરી", "श्रेणी"],
+  "form.chooseCategory": ["Choose category", "કેટેગરી પસંદ કરો", "श्रेणी चुनें"],
+  "form.type": ["Type", "પ્રકાર", "प्रकार"],
+  "form.subcategory": ["Subcategory", "પેટા કેટેગરી", "उप-श्रेणी"],
+  "form.chooseSub": ["Choose subcategory (optional)", "પેટા કેટેગરી પસંદ કરો (વૈકલ્પિક)", "उप-श्रेणी चुनें (वैकल्पिक)"],
+  "form.chooseField": ["Choose {label}", "{label} પસંદ કરો", "{label} चुनें"],
+  "form.choose": ["Choose", "પસંદ કરો", "चुनें"],
+  "form.edit": ["Edit listing details", "લિસ્ટિંગની વિગતો બદલો", "लिस्टिंग का विवरण बदलें"],
+  "form.name": ["Business name", "વ્યવસાયનું નામ", "व्यवसाय का नाम"],
+  "form.description": ["Description", "વર્ણન", "विवरण"],
+  "form.phone": ["Phone", "ફોન", "फ़ोन"],
+  "form.whatsapp": ["WhatsApp", "વોટ્સએપ", "व्हाट्सऐप"],
+  "form.address": ["Address", "સરનામું", "पता"],
+  "form.save": ["Save changes", "ફેરફારો સેવ કરો", "बदलाव सेव करें"],
+  "form.create": ["Create listing", "લિસ્ટિંગ બનાવો", "लिस्टिंग बनाएँ"],
+  // Owner dashboard
+  "od.portal": ["Owner portal", "માલિક પોર્ટલ", "मालिक पोर्टल"],
+  "od.workspace": ["Owner workspace", "માલિકનું કાર્યક્ષેત્ર", "मालिक का कार्यक्षेत्र"],
+  "od.nav.overview": ["Overview", "ઝાંખી", "सारांश"],
+  "od.nav.businesses": ["My businesses", "મારા વ્યવસાય", "मेरे व्यवसाय"],
+  "od.nav.add": ["Add business", "વ્યવસાય ઉમેરો", "व्यवसाय जोड़ें"],
+  "od.nav.offers": ["Offers & promotions", "ઓફર અને પ્રમોશન", "ऑफ़र और प्रमोशन"],
+  "od.nav.plans": ["Plans & billing", "પ્લાન અને બિલિંગ", "प्लान और बिलिंग"],
+  "od.nav.profile": ["Profile & settings", "પ્રોફાઇલ અને સેટિંગ્સ", "प्रोफ़ाइल और सेटिंग्स"],
+  "od.nav.help": ["Help & support", "મદદ અને સહાય", "मदद और सहायता"],
+  "od.status.pending": ["Pending", "બાકી", "लंबित"],
+  "od.status.approved": ["Approved", "મંજૂર", "स्वीकृत"],
+  "od.status.rejected": ["Rejected", "નામંજૂર", "अस्वीकृत"],
+  "od.plan.free": ["Free", "ફ્રી", "फ़्री"],
+  "od.plan.pro": ["Pro", "પ્રો", "प्रो"],
+  "od.plan.premium": ["Premium", "પ્રીમિયમ", "प्रीमियम"],
+  "od.welcomeChip": ["South Bopal · MySobo for businesses", "સાઉથ બોપલ · વ્યવસાય માટે MySobo", "साउथ बोपल · व्यवसाय के लिए MySobo"],
+  "od.welcomeTitle": ["Grow your local presence in South Bopal.", "સાઉથ બોપલમાં તમારા વ્યવસાયની ઓળખ વધારો.", "साउथ बोपल में अपने व्यवसाय की पहचान बढ़ाएँ।"],
+  "od.welcomeText": ["Shops, clinics, tutors and home-service providers in South Bopal, Shela and Ghuma can list their business, post offers for neighbours and manage their plan in one place.", "સાઉથ બોપલ, શેલા અને ઘુમાની દુકાનો, ક્લિનિક, ટ્યુટર અને ઘરેલુ સેવા આપનારા અહીં પોતાનો વ્યવસાય લિસ્ટ કરી શકે છે, પડોશીઓ માટે ઓફર મૂકી શકે છે અને પ્લાન એક જ જગ્યાએ સંભાળી શકે છે.", "साउथ बोपल, शेला और घुमा की दुकानें, क्लिनिक, ट्यूटर और घरेलू सेवा देने वाले यहाँ अपना व्यवसाय लिस्ट कर सकते हैं, पड़ोसियों के लिए ऑफ़र डाल सकते हैं और प्लान एक ही जगह संभाल सकते हैं।"],
+  "od.perk1": ["Be found nearby", "નજીકના લોકો તમને શોધે", "आसपास के लोग आपको ढूँढें"],
+  "od.perk1Text": ["Residents of South Bopal search, call and WhatsApp you directly.", "સાઉથ બોપલના રહેવાસીઓ તમને સીધા શોધે, કૉલ અને વોટ્સએપ કરે.", "साउथ बोपल के निवासी आपको सीधे खोजें, कॉल और व्हाट्सऐप करें।"],
+  "od.perk2": ["Post offers", "ઓફર મૂકો", "ऑफ़र डालें"],
+  "od.perk2Text": ["Share festival deals and new services with your neighbours.", "તહેવારની ઓફર અને નવી સેવાઓ પડોશીઓ સાથે શેર કરો.", "त्योहार के ऑफ़र और नई सेवाएँ पड़ोसियों के साथ साझा करें।"],
+  "od.perk3": ["Grow with a plan", "પ્લાન સાથે આગળ વધો", "प्लान के साथ आगे बढ़ें"],
+  "od.perk3Text": ["Start free. Move to Pro or Premium when you are ready.", "ફ્રીથી શરૂ કરો. તૈયાર હો ત્યારે પ્રો અથવા પ્રીમિયમ લો.", "फ़्री से शुरू करें। तैयार होने पर प्रो या प्रीमियम लें।"],
+  "od.journey": ["How to get listed", "લિસ્ટ કેવી રીતે થવું", "लिस्ट कैसे हों"],
+  "od.step1": ["Sign in", "સાઇન ઇન", "साइन इन"],
+  "od.step2": ["Add your business", "વ્યવસાય ઉમેરો", "व्यवसाय जोड़ें"],
+  "od.step3": ["Send for approval", "મંજૂરી માટે મોકલો", "स्वीकृति के लिए भेजें"],
+  "od.step4": ["MySobo approves", "MySobo મંજૂર કરે", "MySobo स्वीकृत करता है"],
+  "od.step5": ["Go live for residents", "રહેવાસીઓ માટે લાઇવ", "निवासियों के लिए लाइव"],
+  "od.startTitle": ["Start with your account", "તમારા એકાઉન્ટથી શરૂ કરો", "अपने खाते से शुरू करें"],
+  "od.startText": ["Sign in or create a free account in seconds.", "થોડી સેકન્ડમાં સાઇન ઇન કરો અથવા મફત એકાઉન્ટ બનાવો.", "कुछ सेकंड में साइन इन करें या मुफ़्त खाता बनाएँ।"],
+  "od.startButton": ["Sign in or create account", "સાઇન ઇન કરો અથવા એકાઉન્ટ બનાવો", "साइन इन करें या खाता बनाएँ"],
+  "od.overviewChip": ["Owner overview · South Bopal", "માલિકની ઝાંખી · સાઉથ બોપલ", "मालिक सारांश · साउथ बोपल"],
+  "od.welcomeBack": ["Welcome back, {name}!", "ફરી સ્વાગત છે, {name}!", "फिर से स्वागत है, {name}!"],
+  "od.managing": ["{n} listings · {plan} plan", "{n} લિસ્ટિંગ · {plan} પ્લાન", "{n} लिस्टिंग · {plan} प्लान"],
+  "od.noneYet": ["Add your first business to get started.", "શરૂ કરવા તમારો પહેલો વ્યવસાય ઉમેરો.", "शुरू करने के लिए अपना पहला व्यवसाय जोड़ें।"],
+  "od.summary": ["Summary", "સારાંશ", "सारांश"],
+  "od.kpi.total": ["Total businesses", "કુલ વ્યવસાય", "कुल व्यवसाय"],
+  "od.kpi.totalHint": ["Listings you manage", "તમે સંભાળો છો તે લિસ્ટિંગ", "आपकी लिस्टिंग"],
+  "od.kpi.offers": ["Pending offers", "બાકી ઓફર", "लंबित ऑफ़र"],
+  "od.kpi.offersHint": ["Waiting for approval", "મંજૂરીની રાહમાં", "स्वीकृति की प्रतीक्षा"],
+  "od.quickActions": ["Quick actions", "ઝડપી પગલાં", "त्वरित काम"],
+  "od.createOffer": ["Create offer", "ઓફર બનાવો", "ऑफ़र बनाएँ"],
+  "od.viewPlans": ["View plans", "પ્લાન જુઓ", "प्लान देखें"],
+  "od.yourListings": ["Your business listings", "તમારા વ્યવસાય લિસ્ટિંગ", "आपकी व्यवसाय लिस्टिंग"],
+  "od.viewAll": ["View all", "બધું જુઓ", "सब देखें"],
+  "od.manage": ["Manage", "સંભાળો", "संभालें"],
+  "od.activity": ["Recent activity", "તાજેતરની પ્રવૃત્તિ", "हाल की गतिविधि"],
+  "od.act.offer": ["Offer submitted for {name}", "{name} માટે ઓફર મોકલી", "{name} के लिए ऑफ़र भेजा"],
+  "od.act.plan": ["{plan} plan requested for {name}", "{name} માટે {plan} પ્લાનની વિનંતી", "{name} के लिए {plan} प्लान का अनुरोध"],
+  "od.emptyActivity": ["Your offers, plan requests and approvals will show here.", "તમારી ઓફર, પ્લાન વિનંતી અને મંજૂરી અહીં દેખાશે.", "आपके ऑफ़र, प्लान अनुरोध और स्वीकृतियाँ यहाँ दिखेंगी।"],
+  "od.emptyListings": ["You have no listings yet. Add your business so neighbours can find you.", "હજી તમારું કોઈ લિસ્ટિંગ નથી. તમારો વ્યવસાય ઉમેરો જેથી પડોશીઓ તમને શોધી શકે.", "अभी आपकी कोई लिस्टिंग नहीं है। अपना व्यवसाय जोड़ें ताकि पड़ोसी आपको ढूँढ सकें।"],
+  "od.businessesCopy": ["See every listing, its status and send drafts for approval.", "દરેક લિસ્ટિંગ અને તેની સ્થિતિ જુઓ, અને ડ્રાફ્ટ મંજૂરી માટે મોકલો.", "हर लिस्टिंग और उसकी स्थिति देखें, और ड्राफ़्ट स्वीकृति के लिए भेजें।"],
+  "od.searchBusinesses": ["Search by name, category or address", "નામ, કેટેગરી અથવા સરનામાથી શોધો", "नाम, श्रेणी या पते से खोजें"],
+  "od.allTypes": ["All types", "બધા પ્રકાર", "सभी प्रकार"],
+  "od.allStatuses": ["All statuses", "બધી સ્થિતિ", "सभी स्थितियाँ"],
+  "od.status": ["Status", "સ્થિતિ", "स्थिति"],
+  "od.editing": ["Editing {name}", "{name} બદલી રહ્યા છો", "{name} बदल रहे हैं"],
+  "od.editListing": ["Edit listing", "લિસ્ટિંગ બદલો", "लिस्टिंग बदलें"],
+  "od.viewPublic": ["View", "જુઓ", "देखें"],
+  "od.addCopy": ["Fill in the details residents need. Your listing goes live after the MySobo team approves it.", "રહેવાસીઓને જોઈતી વિગતો ભરો. MySobo ટીમ મંજૂર કરે પછી તમારું લિસ્ટિંગ લાઇવ થશે.", "निवासियों के लिए ज़रूरी विवरण भरें। MySobo टीम की स्वीकृति के बाद आपकी लिस्टिंग लाइव होगी।"],
+  "od.afterSubmit": ["After you submit", "મોકલ્યા પછી", "भेजने के बाद"],
+  "od.after1": ["Your listing is saved. We ask if you want to send it for approval.", "તમારું લિસ્ટિંગ સેવ થાય છે. અમે પૂછીએ છીએ કે મંજૂરી માટે મોકલવું છે કે નહીં.", "आपकी लिस्टिंग सेव होती है। हम पूछते हैं कि स्वीकृति के लिए भेजनी है या नहीं।"],
+  "od.after2": ["The MySobo team checks it, usually within 2 working days.", "MySobo ટીમ તેને તપાસે છે, સામાન્ય રીતે 2 કામકાજના દિવસમાં.", "MySobo टीम इसे जाँचती है, आमतौर पर 2 कार्य दिवसों में।"],
+  "od.after3": ["Once approved it goes live, and residents can find, call and WhatsApp you.", "મંજૂરી પછી તે લાઇવ થાય છે, અને રહેવાસીઓ તમને શોધી, કૉલ અને વોટ્સએપ કરી શકે છે.", "स्वीकृति के बाद यह लाइव होती है, और निवासी आपको खोज, कॉल और व्हाट्सऐप कर सकते हैं।"],
+  "od.offersCopy": ["Create offers for residents and track their review status.", "રહેવાસીઓ માટે ઓફર બનાવો અને તેની ચકાસણીની સ્થિતિ જુઓ.", "निवासियों के लिए ऑफ़र बनाएँ और उनकी समीक्षा स्थिति देखें।"],
+  "od.offerTitlePh": ["e.g. 10% off on first home cleaning", "દા.ત. પહેલી ઘર સફાઈ પર 10% છૂટ", "जैसे पहली घर सफ़ाई पर 10% छूट"],
+  "od.offerBodyPh": ["Terms, valid days and who can use it", "શરતો, માન્ય દિવસો અને કોણ લાભ લઈ શકે", "शर्तें, मान्य दिन और कौन लाभ ले सकता है"],
+  "od.submittedOffers": ["Submitted offers", "મોકલેલી ઓફર", "भेजे गए ऑफ़र"],
+  "od.allBusinesses": ["All businesses", "બધા વ્યવસાય", "सभी व्यवसाय"],
+  "od.submittedOn": ["Submitted {date}", "{date} એ મોકલી", "{date} को भेजा"],
+  "od.noOffers": ["No offers yet.", "હજી કોઈ ઓફર નથી.", "अभी कोई ऑफ़र नहीं।"],
+  "od.plansCopy": ["Compare plans and request an upgrade for each listing.", "પ્લાનની સરખામણી કરો અને દરેક લિસ્ટિંગ માટે અપગ્રેડની વિનંતી કરો.", "प्लान की तुलना करें और हर लिस्टिंग के लिए अपग्रेड का अनुरोध करें।"],
+  "od.selectListing": ["Business listing", "વ્યવસાય લિસ્ટિંગ", "व्यवसाय लिस्टिंग"],
+  "od.currentPlanFor": ["Current plan for {name}", "{name} નો હાલનો પ્લાન", "{name} का मौजूदा प्लान"],
+  "od.month": ["month", "મહિને", "महीना"],
+  "od.renews": ["Valid until {date}", "{date} સુધી માન્ય", "{date} तक मान्य"],
+  "od.currentPlan": ["Current plan", "હાલનો પ્લાન", "मौजूदा प्लान"],
+  "od.currentlyActive": ["Currently active", "હાલમાં ચાલુ", "अभी सक्रिय"],
+  "od.requested": ["Request sent", "વિનંતી મોકલી", "अनुरोध भेजा"],
+  "od.requestPlan": ["Request {plan}", "{plan} માટે વિનંતી કરો", "{plan} का अनुरोध करें"],
+  "od.planTag.free": ["Everything you need to be found.", "શોધાવા માટે જરૂરી બધું.", "खोजे जाने के लिए ज़रूरी सब कुछ।"],
+  "od.planTag.pro": ["Stand out with offers and more photos.", "ઓફર અને વધુ ફોટા સાથે અલગ દેખાઓ.", "ऑफ़र और ज़्यादा फ़ोटो के साथ अलग दिखें।"],
+  "od.planTag.premium": ["Top placement and full showcase.", "ટોચનું સ્થાન અને સંપૂર્ણ પ્રદર્શન.", "सबसे ऊपर जगह और पूरा प्रदर्शन।"],
+  "od.feat.free1": ["Business listing with photos", "ફોટા સાથે વ્યવસાય લિસ્ટિંગ", "फ़ोटो के साथ व्यवसाय लिस्टिंग"],
+  "od.feat.free2": ["Up to 3 photos", "3 ફોટા સુધી", "3 फ़ोटो तक"],
+  "od.feat.free3": ["Call and WhatsApp buttons", "કૉલ અને વોટ્સએપ બટન", "कॉल और व्हाट्सऐप बटन"],
+  "od.feat.pro1": ["Everything in Free", "ફ્રીમાં છે તે બધું", "फ़्री की सारी सुविधाएँ"],
+  "od.feat.pro2": ["Up to 10 photos", "10 ફોટા સુધી", "10 फ़ोटो तक"],
+  "od.feat.pro3": ["Offers shown to residents", "રહેવાસીઓને ઓફર દેખાય", "निवासियों को ऑफ़र दिखें"],
+  "od.feat.pro4": ["Better placement in search", "શોધમાં વધુ સારું સ્થાન", "खोज में बेहतर जगह"],
+  "od.feat.prem1": ["Everything in Pro", "પ્રોમાં છે તે બધું", "प्रो की सारी सुविधाएँ"],
+  "od.feat.prem2": ["Up to 25 photos", "25 ફોટા સુધી", "25 फ़ोटो तक"],
+  "od.feat.prem3": ["Featured on the home page", "હોમ પેજ પર ફીચર્ડ", "होम पेज पर फ़ीचर्ड"],
+  "od.feat.prem4": ["Priority placement in its category", "કેટેગરીમાં પ્રાથમિક સ્થાન", "अपनी श्रेणी में प्राथमिक जगह"],
+  "od.requestHistory": ["Plan request history", "પ્લાન વિનંતીનો ઇતિહાસ", "प्लान अनुरोध इतिहास"],
+  "od.requestsCount": ["{n} requests", "{n} વિનંતી", "{n} अनुरोध"],
+  "od.requestedPlan": ["Requested plan", "માગેલો પ્લાન", "माँगा गया प्लान"],
+  "od.submitted": ["Submitted", "મોકલ્યું", "भेजा"],
+  "od.noRequests": ["No plan requests yet.", "હજી કોઈ પ્લાન વિનંતી નથી.", "अभी कोई प्लान अनुरोध नहीं।"],
+  "od.profileCopy": ["Your account details and language.", "તમારા એકાઉન્ટની વિગતો અને ભાષા.", "आपके खाते का विवरण और भाषा।"],
+  "od.account": ["Account", "એકાઉન્ટ", "खाता"],
+  "od.profileNote": ["To change your sign-in details, contact the MySobo team.", "સાઇન ઇન વિગતો બદલવા MySobo ટીમનો સંપર્ક કરો.", "साइन इन विवरण बदलने के लिए MySobo टीम से संपर्क करें।"],
+  "od.helpCopy": ["Answers to common questions from business owners.", "વ્યવસાય માલિકોના સામાન્ય પ્રશ્નોના જવાબ.", "व्यवसाय मालिकों के आम सवालों के जवाब।"],
+  "od.faq1q": ["How long does approval take?", "મંજૂરીમાં કેટલો સમય લાગે છે?", "स्वीकृति में कितना समय लगता है?"],
+  "od.faq1a": ["Usually up to 2 working days. The status changes to Live on your dashboard.", "સામાન્ય રીતે 2 કામકાજના દિવસ સુધી. તમારા ડેશબોર્ડ પર સ્થિતિ ‘લાઇવ’ થઈ જશે.", "आमतौर पर 2 कार्य दिवस तक। आपके डैशबोर्ड पर स्थिति ‘लाइव’ हो जाएगी।"],
+  "od.faq2q": ["Why can't residents see my listing?", "રહેવાસીઓને મારું લિસ્ટિંગ કેમ દેખાતું નથી?", "निवासियों को मेरी लिस्टिंग क्यों नहीं दिखती?"],
+  "od.faq2a": ["A listing shows to residents only after approval. If it says Not sent, open My businesses and press Send for approval.", "મંજૂરી પછી જ લિસ્ટિંગ રહેવાસીઓને દેખાય છે. જો ‘હજી મોકલ્યું નથી’ લખ્યું હોય, તો ‘મારા વ્યવસાય’ ખોલીને ‘મંજૂરી માટે મોકલો’ દબાવો.", "स्वीकृति के बाद ही लिस्टिंग निवासियों को दिखती है। अगर ‘अभी नहीं भेजी’ लिखा है, तो ‘मेरे व्यवसाय’ खोलकर ‘स्वीकृति के लिए भेजें’ दबाएँ।"],
+  "od.faq3q": ["When do residents see my offer?", "રહેવાસીઓને મારી ઓફર ક્યારે દેખાય?", "निवासियों को मेरा ऑफ़र कब दिखेगा?"],
+  "od.faq3a": ["After the MySobo team approves it. Its status changes from Pending to Approved.", "MySobo ટીમ મંજૂર કરે પછી. તેની સ્થિતિ ‘બાકી’ માંથી ‘મંજૂર’ થાય છે.", "MySobo टीम की स्वीकृति के बाद। उसकी स्थिति ‘लंबित’ से ‘स्वीकृत’ हो जाती है।"],
+  "od.faq4q": ["How do I pay for Pro or Premium?", "પ્રો અથવા પ્રીમિયમ માટે ચુકવણી કેવી રીતે કરું?", "प्रो या प्रीमियम के लिए भुगतान कैसे करूँ?"],
+  "od.faq4a": ["Request the plan from Plans & billing. The MySobo team contacts you to confirm payment and then activates it.", "‘પ્લાન અને બિલિંગ’માંથી પ્લાનની વિનંતી કરો. MySobo ટીમ ચુકવણી માટે સંપર્ક કરશે અને પછી પ્લાન ચાલુ કરશે.", "‘प्लान और बिलिंग’ से प्लान का अनुरोध करें। MySobo टीम भुगतान के लिए संपर्क करेगी और फिर प्लान चालू करेगी।"],
+  // Approval flow and resident navigation
+  "od.group.listings": ["Listings", "લિસ્ટિંગ", "लिस्टिंग"],
+  "od.group.grow": ["Grow", "વૃદ્ધિ", "बढ़ोतरी"],
+  "od.group.account": ["Account", "એકાઉન્ટ", "खाता"],
+  "od.tab.home": ["Home", "હોમ", "होम"],
+  "od.tab.listings": ["Listings", "લિસ્ટિંગ", "लिस्टिंग"],
+  "od.tab.add": ["Add", "ઉમેરો", "जोड़ें"],
+  "od.tab.offers": ["Offers", "ઓફર", "ऑफ़र"],
+  "od.tab.more": ["More", "વધુ", "और"],
+  "od.sideTip": ["Listings go live after the MySobo team approves them.", "MySobo ટીમ મંજૂર કરે પછી લિસ્ટિંગ લાઇવ થાય છે.", "MySobo टीम की स्वीकृति के बाद लिस्टिंग लाइव होती है।"],
+  "od.state.live": ["Verified ✓", "ચકાસાયેલ ✓", "सत्यापित ✓"],
+  "od.state.waiting": ["Listing requested", "લિસ્ટિંગ વિનંતી મોકલી", "लिस्टिंग अनुरोधित"],
+  "od.state.draft": ["Not sent", "હજી મોકલ્યું નથી", "अभी नहीं भेजी"],
+  "od.waitingShort": ["With the MySobo team", "MySobo ટીમ પાસે", "MySobo टीम के पास"],
+  "od.owner": ["Owner", "માલિક", "मालिक"],
+  "od.kpi.live": ["Verified ✓", "ચકાસાયેલ ✓", "सत्यापित ✓"],
+  "od.kpi.liveHint": ["Residents can see these", "રહેવાસીઓને દેખાય છે", "निवासियों को दिखती हैं"],
+  "od.kpi.waiting": ["Listing requested", "લિસ્ટિંગ વિનંતી મોકલી", "लिस्टिंग अनुरोधित"],
+  "od.kpi.waitingHint": ["With the MySobo team", "MySobo ટીમ પાસે", "MySobo टीम के पास"],
+  "od.kpi.draft": ["Not sent", "હજી મોકલ્યું નથી", "अभी नहीं भेजी"],
+  "od.kpi.draftHint": ["Send these for approval", "આ મંજૂરી માટે મોકલો", "इन्हें स्वीकृति के लिए भेजें"],
+  "od.kpi.rating": ["Average rating", "સરેરાશ રેટિંગ", "औसत रेटिंग"],
+  "od.kpi.ratingHint": ["From resident reviews", "રહેવાસીઓના રિવ્યૂ પરથી", "निवासियों की समीक्षाओं से"],
+  "od.qa.add": ["List a new shop or service", "નવી દુકાન કે સેવા લિસ્ટ કરો", "नई दुकान या सेवा लिस्ट करें"],
+  "od.qa.offer": ["Share a deal with neighbours", "પડોશીઓ સાથે ઓફર શેર કરો", "पड़ोसियों से ऑफ़र साझा करें"],
+  "od.qa.plans": ["Get more photos and top placement", "વધુ ફોટા અને ટોચનું સ્થાન મેળવો", "ज़्यादा फ़ोटो और ऊपर जगह पाएँ"],
+  "od.act.approval": ["{name} sent for approval", "{name} મંજૂરી માટે મોકલ્યું", "{name} स्वीकृति के लिए भेजी"],
+  "od.nudgeTitle": ["{name} is not live yet", "{name} હજી લાઇવ નથી", "{name} अभी लाइव नहीं है"],
+  "od.nudgeText": ["Send it for approval so residents can find it.", "રહેવાસીઓ શોધી શકે તે માટે મંજૂરી માટે મોકલો.", "निवासी इसे ढूँढ सकें, इसके लिए स्वीकृति के लिए भेजें।"],
+  "od.promptTitle": ["Send your listing for approval?", "તમારું લિસ્ટિંગ મંજૂરી માટે મોકલવું છે?", "अपनी लिस्टिंग स्वीकृति के लिए भेजें?"],
+  "od.promptText": ["The MySobo team checks the details and makes it live for residents.", "MySobo ટીમ વિગતો તપાસીને રહેવાસીઓ માટે લાઇવ કરશે.", "MySobo टीम विवरण जाँचकर इसे निवासियों के लिए लाइव करेगी।"],
+  "od.promptStep1": ["You send it now", "તમે હમણાં મોકલો", "आप अभी भेजें"],
+  "od.promptStep2": ["We check it within 2 working days", "અમે 2 કામકાજના દિવસમાં તપાસીએ", "हम 2 कार्य दिवसों में जाँचें"],
+  "od.promptStep3": ["It goes live for residents", "તે રહેવાસીઓ માટે લાઇવ થાય", "यह निवासियों के लिए लाइव हो"],
+  "od.sendApproval": ["Send for approval", "મંજૂરી માટે મોકલો", "स्वीकृति के लिए भेजें"],
+  "od.notNow": ["Not now", "હમણાં નહીં", "अभी नहीं"],
+  "od.approvalSent": ["{name} was sent to the MySobo team for approval.", "{name} MySobo ટીમને મંજૂરી માટે મોકલાયું.", "{name} MySobo टीम को स्वीकृति के लिए भेजी गई।"],
+  "od.created": ["Listing requested. The MySobo team will review it.", "લિસ્ટિંગ વિનંતી મોકલાઈ. MySobo ટીમ તેને તપાસશે.", "लिस्टिंग अनुरोध भेजा गया। MySobo टीम इसकी समीक्षा करेगी।"],
+  "od.teamNote": ["Note from MySobo:", "MySobo તરફથી નોંધ:", "MySobo की ओर से नोट:"],
+  "od.reviews": ["{n} reviews", "{n} રિવ્યૂ", "{n} समीक्षाएँ"],
+  "od.popular": ["Popular", "લોકપ્રિય", "लोकप्रिय"],
+  "od.addToPost": ["Add a listing to post offers.", "ઓફર મૂકવા લિસ્ટિંગ ઉમેરો.", "ऑफ़र डालने के लिए लिस्टिंग जोड़ें।"],
+  "od.addBeforePlan": ["Add a listing before choosing a plan.", "પ્લાન પસંદ કરતાં પહેલાં લિસ્ટિંગ ઉમેરો.", "प्लान चुनने से पहले लिस्टिंग जोड़ें।"],
+  "nav.explore": ["Explore", "શોધો", "खोजें"],
+  "nav.categories": ["Categories", "કેટેગરી", "श्रेणियाँ"],
+  "nav.saved": ["Saved", "સેવ કરેલા", "सेव किए"],
+  "nav.myBusiness": ["My business", "મારો વ્યવસાય", "मेरा व्यवसाय"],
+  "saved.title": ["Saved businesses", "સેવ કરેલા વ્યવસાય", "सेव किए गए व्यवसाय"],
+  "saved.copy": ["Businesses you saved for later.", "પછી માટે સેવ કરેલા વ્યવસાય.", "बाद के लिए सेव किए गए व्यवसाय।"],
+  "saved.empty": ["Tap the heart on any business to save it here.", "કોઈપણ વ્યવસાય પર હૃદય દબાવો અને અહીં સેવ કરો.", "किसी भी व्यवसाय पर दिल दबाएँ और यहाँ सेव करें।"],
+  "saved.signIn": ["Sign in to see your saved businesses.", "સેવ કરેલા વ્યવસાય જોવા સાઇન ઇન કરો.", "सेव किए गए व्यवसाय देखने के लिए साइन इन करें।"],
+  "cards.save": ["Save {name}", "{name} સેવ કરો", "{name} सेव करें"],
+  "cards.unsave": ["Remove {name} from saved", "{name} સેવમાંથી દૂર કરો", "{name} को सेव से हटाएँ"],
+  "cards.new": ["New", "નવું", "नया"],
+  "cards.reviews": ["{n} reviews", "{n} રિવ્યૂ", "{n} समीक्षाएँ"],
+  // Onboarding
+  "ob.title1": ["Your neighbourhood,", "તમારો પડોશ,", "आपका पड़ोस,"],
+  "ob.title2": ["on the go.", "હવે હાથમાં.", "अब हाथ में।"],
+  "ob.lead": ["Find trusted shops and services in South Bopal, Shela and Ghuma, and call or WhatsApp them in one tap.", "સાઉથ બોપલ, શેલા અને ઘુમાની વિશ્વસનીય દુકાનો અને સેવાઓ શોધો, અને એક ટૅપમાં કૉલ કે વોટ્સએપ કરો.", "साउथ बोपल, शेला और घुमा की भरोसेमंद दुकानें और सेवाएँ खोजें, और एक टैप में कॉल या व्हाट्सऐप करें।"],
+  "ob.start": ["Get started", "શરૂ કરો", "शुरू करें"],
+  "ob.skip": ["Skip", "છોડો", "छोड़ें"],
+  "ob.next": ["Next", "આગળ", "आगे"],
+  "ob.explore": ["Start exploring", "શોધવાનું શરૂ કરો", "खोजना शुरू करें"],
+  "ob.progress": ["Step {n} of {total}", "{total} માંથી પગલું {n}", "{total} में से चरण {n}"],
+  "ob.s1Title": ["Trusted help, close to home", "વિશ્વસનીય મદદ, ઘરની નજીક", "भरोसेमंद मदद, घर के पास"],
+  "ob.s1Text": ["Plumbers, tiffins, tutors, clinics and shops from your own area.", "તમારા જ વિસ્તારના પ્લમ્બર, ટિફિન, ટ્યુટર, ક્લિનિક અને દુકાનો.", "आपके अपने इलाके के प्लंबर, टिफ़िन, ट्यूटर, क्लिनिक और दुकानें।"],
+  "ob.s2Title": ["Save your favourites", "તમારા મનપસંદ સેવ કરો", "अपने पसंदीदा सेव करें"],
+  "ob.s2Text": ["Tap the heart to keep the places you trust one tap away.", "હૃદય દબાવો અને ભરોસાપાત્ર જગ્યાઓ એક ટૅપ દૂર રાખો.", "दिल दबाएँ और भरोसेमंद जगहें एक टैप दूर रखें।"],
+  "ob.s3Title": ["Own a business? List it free", "વ્યવસાય છે? મફતમાં લિસ્ટ કરો", "व्यवसाय है? मुफ़्त में लिस्ट करें"],
+  "ob.s3Text": ["Add your shop or service and reach neighbours across South Bopal.", "તમારી દુકાન કે સેવા ઉમેરો અને સાઉથ બોપલના પડોશીઓ સુધી પહોંચો.", "अपनी दुकान या सेवा जोड़ें और साउथ बोपल के पड़ोसियों तक पहुँचें।"],
+  "home.seeAllCats": ["See all {n} categories", "બધી {n} કેટેગરી જુઓ", "सभी {n} श्रेणियाँ देखें"],
+  // Google sign-in
+  "login.introGoogle": ["Sign in with your Google (Gmail) account. No password to remember.", "તમારા Google (Gmail) એકાઉન્ટથી સાઇન ઇન કરો. કોઈ પાસવર્ડ યાદ રાખવાનો નથી.", "अपने Google (Gmail) खाते से साइन इन करें। कोई पासवर्ड याद नहीं रखना।"],
+  "login.useGoogle": ["Use Google instead", "તેના બદલે Google વાપરો", "इसके बजाय Google इस्तेमाल करें"],
+  "login.googleConsent": ["By continuing you agree to MySobo's terms and privacy policy.", "આગળ વધીને તમે MySobo ની શરતો અને ગોપનીયતા નીતિ સાથે સંમત થાઓ છો.", "आगे बढ़कर आप MySobo की शर्तों और गोपनीयता नीति से सहमत होते हैं।"],
+  "login.googleMissing": ["Google sign-in is not set up yet. Add VITE_GOOGLE_CLIENT_ID.", "Google સાઇન ઇન હજી સેટ થયું નથી. VITE_GOOGLE_CLIENT_ID ઉમેરો.", "Google साइन इन अभी सेट नहीं है। VITE_GOOGLE_CLIENT_ID जोड़ें।"],
+  "err.google": ["Could not sign in with Google.", "Google થી સાઇન ઇન થઈ શક્યું નહીં.", "Google से साइन इन नहीं हो सका।"],
+  "err.googleLoad": ["Could not load Google sign-in. Check your connection.", "Google સાઇન ઇન લોડ થઈ શક્યું નહીં. કનેક્શન તપાસો.", "Google साइन इन लोड नहीं हो सका। कनेक्शन जाँचें।"],
+  "od.name": ["Name", "નામ", "नाम"],
+  "od.email": ["Email", "ઇમેઇલ", "ईमेल"],
+  "od.startButtonGoogle": ["Sign in or create account", "સાઇન ઇન કરો અથવા એકાઉન્ટ બનાવો", "साइन इन करें या खाता बनाएँ"],
+  "login.introEmail": ["Enter your email to continue.", "આગળ વધવા તમારો ઇમેઇલ દાખલ કરો.", "आगे बढ़ने के लिए अपना ईमेल दर्ज करें।"],
+  "login.email": ["Email address", "ઇમેઇલ સરનામું", "ईमेल पता"],
+  "login.emailPh": ["you@gmail.com", "you@gmail.com", "you@gmail.com"],
+  "login.continue": ["Continue", "આગળ વધો", "आगे बढ़ें"],
+  "login.useEmail": ["Use email instead", "તેના બદલે ઇમેઇલ વાપરો", "इसके बजाय ईमेल इस्तेमाल करें"],
+  // Listing page
+  "lp.back": ["Back", "પાછા", "वापस"],
+  "lp.share": ["Share", "શેર કરો", "शेयर करें"],
+  "lp.copied": ["Link copied.", "લિંક કૉપી થઈ.", "लिंक कॉपी हो गया।"],
+  "lp.contact": ["Contact", "સંપર્ક", "संपर्क"],
+  "lp.phone": ["Phone number", "ફોન નંબર", "फ़ोन नंबर"],
+  "lp.lockedText": ["Log in to see the full number and call or WhatsApp the business directly.", "પૂરો નંબર જોવા અને સીધો કૉલ કે વોટ્સએપ કરવા લૉગ ઇન કરો.", "पूरा नंबर देखने और सीधे कॉल या व्हाट्सऐप करने के लिए लॉग इन करें।"],
+  "lp.loginToSee": ["Log in to see number", "નંબર જોવા લૉગ ઇન કરો", "नंबर देखने के लिए लॉग इन करें"],
+  "lp.noPhone": ["This business has not added a phone number yet.", "આ વ્યવસાયે હજી ફોન નંબર ઉમેર્યો નથી.", "इस व्यवसाय ने अभी फ़ोन नंबर नहीं जोड़ा है।"],
+  "lp.about": ["About", "વિશે", "परिचय"],
+  "lp.services": ["Services and prices", "સેવાઓ અને ભાવ", "सेवाएँ और दाम"],
+  "lp.products": ["Products and prices", "ઉત્પાદનો અને ભાવ", "उत्पाद और दाम"],
+  "lp.servicesProducts": ["Services, products and prices", "સેવાઓ, ઉત્પાદનો અને ભાવ", "सेवाएँ, उत्पाद और दाम"],
+  "lp.from": ["from {price}", "{price} થી", "{price} से"],
+  "lp.hours": ["Opening hours", "ખુલવાનો સમય", "खुलने का समय"],
+  "lp.today": ["Today", "આજે", "आज"],
+  "lp.closed": ["Closed", "બંધ", "बंद"],
+  "lp.openNow": ["Open now", "હમણાં ખુલ્લું", "अभी खुला"],
+  "lp.closedNow": ["Closed now", "હમણાં બંધ", "अभी बंद"],
+  "lp.loginToReview": ["Log in to write a review", "રિવ્યૂ લખવા લૉગ ઇન કરો", "समीक्षा लिखने के लिए लॉग इन करें"],
+  "lp.loginToReviewText": ["Reviews come from signed-in residents, so neighbours can trust them.", "રિવ્યૂ સાઇન ઇન કરેલા રહેવાસીઓ જ આપે છે, જેથી પડોશીઓ ભરોસો કરી શકે.", "समीक्षाएँ केवल साइन इन किए निवासी देते हैं, ताकि पड़ोसी भरोसा कर सकें।"],
+  "lp.yourRating": ["Your rating", "તમારું રેટિંગ", "आपकी रेटिंग"],
+  "lp.pickRating": ["Choose a star rating first.", "પહેલા સ્ટાર રેટિંગ પસંદ કરો.", "पहले स्टार रेटिंग चुनें।"],
+  // Calendly-style onboarding and sign-up
+  "ob2.line1": ["Connect", "જોડાઓ", "जुड़ें"],
+  "ob2.line2": ["with MySobo", "MySobo સાથે,", "MySobo के साथ,"],
+  "ob2.line3": ["on the go", "ગમે ત્યાંથી", "कहीं से भी"],
+  "ob2.create": ["Create an account", "એકાઉન્ટ બનાવો", "खाता बनाएँ"],
+  "ob2.signin": ["Sign in", "સાઇન ઇન કરો", "साइन इन करें"],
+  "ob2.guest": ["Explore without an account", "એકાઉન્ટ વગર જુઓ", "बिना खाते के देखें"],
+  "auth.signupSub": ["Sign up with MySobo for free", "MySobo પર મફતમાં સાઇન અપ કરો", "MySobo पर मुफ़्त में साइन अप करें"],
+  "auth.loginSub": ["Log in to your MySobo account", "તમારા MySobo એકાઉન્ટમાં લૉગ ઇન કરો", "अपने MySobo खाते में लॉग इन करें"],
+  "auth.emailPh": ["email address", "ઇમેઇલ સરનામું", "ईमेल पता"],
+  "auth.getStarted": ["Get started", "શરૂ કરો", "शुरू करें"],
+  "auth.or": ["OR", "અથવા", "या"],
+  "auth.haveAccount": ["Already have an account?", "પહેલેથી એકાઉન્ટ છે?", "पहले से खाता है?"],
+  "auth.noAccount": ["New to MySobo?", "MySobo પર નવા છો?", "MySobo पर नए हैं?"],
+  "auth.logIn": ["Log in", "લૉગ ઇન", "लॉग इन"],
+  "auth.signUp": ["Sign up", "સાઇન અપ", "साइन अप"],
+  "brand.tagline": ["Trusted help, close to home.", "વિશ્વસનીય મદદ, ઘરની નજીક.", "भरोसेमंद मदद, घर के पास।"],
+  "auth.perk1": ["Free for residents, always", "રહેવાસીઓ માટે હંમેશા મફત", "निवासियों के लिए हमेशा मुफ़्त"],
+  "auth.perk2": ["See numbers and call businesses directly", "નંબર જુઓ અને વ્યવસાયને સીધો કૉલ કરો", "नंबर देखें और व्यवसाय को सीधे कॉल करें"],
+  "auth.perk3": ["Save favourites and write reviews", "મનપસંદ સેવ કરો અને રિવ્યૂ લખો", "पसंदीदा सेव करें और समीक्षा लिखें"],
+  // Calendly-web-style landing, sign-up and owner wizard
+  "home.sub": ["Plumbers, tiffins, tutors, clinics and shops trusted by your neighbours. {n} local businesses and growing.", "પ્લમ્બર, ટિફિન, ટ્યુટર, ક્લિનિક અને દુકાનો, જેના પર તમારા પડોશીઓ ભરોસો કરે છે. {n} સ્થાનિક વ્યવસાય અને વધી રહ્યા છે.", "प्लंबर, टिफ़िन, ट्यूटर, क्लिनिक और दुकानें, जिन पर आपके पड़ोसी भरोसा करते हैं। {n} स्थानीय व्यवसाय और बढ़ रहे हैं।"],
+  "home.previewTitle": ["Near you in South Bopal", "સાઉથ બોપલમાં તમારી નજીક", "साउथ बोपल में आपके पास"],
+  "home.trustedBy": ["Used by residents of", "આ સોસાયટીના રહેવાસીઓ વાપરે છે", "इन सोसायटियों के निवासी इस्तेमाल करते हैं"],
+  "auth.asideChip": ["Free for residents", "રહેવાસીઓ માટે મફત", "निवासियों के लिए मुफ़्त"],
+  "auth.asideTitle": ["Everything nearby, in one trusted place", "નજીકનું બધું, એક વિશ્વસનીય જગ્યાએ", "आसपास का सब कुछ, एक भरोसेमंद जगह"],
+  "auth.perk4": ["List your own business for free", "તમારો વ્યવસાય મફતમાં લિસ્ટ કરો", "अपना व्यवसाय मुफ़्त में लिस्ट करें"],
+  "auth.asideFoot": ["South Bopal · Shela · Ghuma · Bopal", "સાઉથ બોપલ · શેલા · ઘુમા · બોપલ", "साउथ बोपल · शेला · घुमा · बोपल"],
+  "wiz.step": ["Step {n} of {total}", "પગલું {n} / {total}", "चरण {n} / {total}"],
+  "wiz.hello": ["Welcome to MySobo for businesses!", "વ્યવસાય માટે MySobo માં સ્વાગત છે!", "व्यवसाय के लिए MySobo में स्वागत है!"],
+  "wiz.helloBack": ["Let's add another business", "ચાલો બીજો વ્યવસાય ઉમેરીએ", "चलिए एक और व्यवसाय जोड़ें"],
+  "wiz.q1": ["What does your business offer?", "તમારો વ્યવસાય શું આપે છે?", "आपका व्यवसाय क्या देता है?"],
+  "wiz.q1Hint": ["This sets up the right categories for you.", "આનાથી તમારા માટે યોગ્ય કેટેગરી તૈયાર થાય છે.", "इससे आपके लिए सही श्रेणियाँ तैयार होती हैं।"],
+  "wiz.k.service": ["Services", "સેવાઓ", "सेवाएँ"],
+  "wiz.k.serviceHint": ["Repairs, tiffin, tuition, clinic…", "રિપેર, ટિફિન, ટ્યુશન, ક્લિનિક…", "रिपेयर, टिफ़िन, ट्यूशन, क्लिनिक…"],
+  "wiz.k.product": ["Products", "ઉત્પાદનો", "उत्पाद"],
+  "wiz.k.productHint": ["Shop, dairy, bakery, store…", "દુકાન, ડેરી, બેકરી, સ્ટોર…", "दुकान, डेयरी, बेकरी, स्टोर…"],
+  "wiz.k.both": ["Both", "બંને", "दोनों"],
+  "wiz.k.bothHint": ["You sell and also serve", "તમે વેચો છો અને સેવા પણ આપો છો", "आप बेचते भी हैं और सेवा भी देते हैं"],
+  "wiz.q2": ["How can MySobo help you?", "MySobo તમને કેવી રીતે મદદ કરી શકે?", "MySobo आपकी कैसे मदद कर सकता है?"],
+  "wiz.q2Hint": ["Select all that apply.", "લાગુ પડે તે બધું પસંદ કરો.", "जो लागू हों, सब चुनें।"],
+  "wiz.g.calls": ["Get calls and WhatsApp messages", "કૉલ અને વોટ્સએપ મેળવો", "कॉल और व्हाट्सऐप पाएँ"],
+  "wiz.g.prices": ["Show my prices", "મારા ભાવ બતાવો", "मेरे दाम दिखाएँ"],
+  "wiz.g.offers": ["Post offers for neighbours", "પડોશીઓ માટે ઓફર મૂકો", "पड़ोसियों के लिए ऑफ़र डालें"],
+  "wiz.g.reviews": ["Collect reviews", "રિવ્યૂ મેળવો", "समीक्षाएँ पाएँ"],
+  "wiz.g.hours": ["Show opening hours", "ખુલવાનો સમય બતાવો", "खुलने का समय दिखाएँ"],
+  "wiz.g.reach": ["Reach new societies", "નવી સોસાયટી સુધી પહોંચો", "नई सोसायटियों तक पहुँचें"],
+  "wiz.next": ["Next", "આગળ", "आगे"],
+  "wiz.back": ["Back", "પાછા", "वापस"],
+  "wiz.asideTitle": ["What happens next", "હવે શું થશે", "आगे क्या होगा"],
+  // Calendly-style owner dashboard
+  "cd.promoTitle": ["Get approved faster", "ઝડપથી મંજૂરી મેળવો", "जल्दी स्वीकृति पाएँ"],
+  "cd.promoLink": ["See how it works", "કેવી રીતે કામ કરે છે તે જુઓ", "देखें यह कैसे काम करता है"],
+  "cd.upgrade": ["Upgrade plan", "પ્લાન અપગ્રેડ કરો", "प्लान अपग्रेड करें"],
+  "cd.settings": ["Settings", "સેટિંગ્સ", "सेटिंग्स"],
+  "cd.title": ["My businesses", "મારા વ્યવસાય", "मेरे व्यवसाय"],
+  "cd.managePlans": ["Manage plans", "પ્લાન સંભાળો", "प्लान संभालें"],
+  "cd.create": ["Create", "બનાવો", "बनाएँ"],
+  "cd.createBusiness": ["New business listing", "નવું વ્યવસાય લિસ્ટિંગ", "नई व्यवसाय लिस्टिंग"],
+  "cd.createBusinessHint": ["Add a shop or service", "દુકાન કે સેવા ઉમેરો", "दुकान या सेवा जोड़ें"],
+  "cd.createOffer": ["New offer", "નવી ઓફર", "नया ऑफ़र"],
+  "cd.createOfferHint": ["Share a deal with neighbours", "પડોશીઓ સાથે ઓફર શેર કરો", "पड़ोसियों से ऑफ़र साझा करें"],
+  "cd.tabListings": ["Listings", "લિસ્ટિંગ", "लिस्टिंग"],
+  "cd.tabOffers": ["Offers", "ઓફર", "ऑफ़र"],
+  "cd.tabActivity": ["Activity", "પ્રવૃત્તિ", "गतिविधि"],
+  "cd.search": ["Search listings", "લિસ્ટિંગ શોધો", "लिस्टिंग खोजें"],
+  "cd.viewPage": ["View public page", "જાહેર પેજ જુઓ", "सार्वजनिक पेज देखें"],
+  "cd.copyLink": ["Copy link", "લિંક કૉપી કરો", "लिंक कॉपी करें"],
+  "cd.copied": ["Copied", "કૉપી થઈ", "कॉपी हो गया"],
+  "cd.tipTitle": ["Get your first customer!", "તમારો પહેલો ગ્રાહક મેળવો!", "अपना पहला ग्राहक पाएँ!"],
+  "cd.tipText": ["Your listing is live. Copy its link and share it in your society's WhatsApp group.", "તમારું લિસ્ટિંગ લાઇવ છે. તેની લિંક કૉપી કરો અને સોસાયટીના વોટ્સએપ ગ્રુપમાં શેર કરો.", "आपकी लिस्टिंग लाइव है। उसका लिंक कॉपी करें और सोसायटी के व्हाट्सऐप ग्रुप में साझा करें।"],
+  "cd.learnMore": ["Learn more", "વધુ જાણો", "और जानें"],
+  "cd.gotIt": ["Got it", "સમજાઈ ગયું", "समझ गया"],
+  "cd.getStarted": ["Get started", "શરૂઆત કરો", "शुरुआत करें"],
+  "cd.progress": ["{done} of {total} done", "{total} માંથી {done} પૂર્ણ", "{total} में से {done} पूरे"],
+  "cd.gs1": ["Add your first business", "તમારો પહેલો વ્યવસાય ઉમેરો", "अपना पहला व्यवसाय जोड़ें"],
+  "cd.gs2": ["Send it for approval", "મંજૂરી માટે મોકલો", "स्वीकृति के लिए भेजें"],
+  "cd.gs3": ["Share your listing link", "તમારા લિસ્ટિંગની લિંક શેર કરો", "अपनी लिस्टिंग का लिंक साझा करें"],
+  "cd.gs4": ["Post your first offer", "તમારી પહેલી ઓફર મૂકો", "अपना पहला ऑफ़र डालें"],
+  "cd.gs5": ["Choose the right plan", "યોગ્ય પ્લાન પસંદ કરો", "सही प्लान चुनें"],
+  "cd.task": ["1 task", "1 કામ", "1 काम"],
+  "cd.done": ["Done", "પૂર્ણ", "पूरा"],
+  "cd.dontShow": ["Don't show again", "ફરી ન બતાવો", "फिर न दिखाएँ"],
+  "cd.noOffers": ["No offers yet. Use + Create to post one.", "હજી કોઈ ઓફર નથી. + બનાવો થી ઓફર મૂકો.", "अभी कोई ऑफ़र नहीं। + बनाएँ से ऑफ़र डालें।"],
+  // Verified / listing requests
+  "vf.verified": ["Verified", "ચકાસાયેલ", "सत्यापित"],
+  "vf.requested": ["Listing requested", "લિસ્ટિંગ વિનંતી મોકલી", "लिस्टिंग अनुरोधित"],
+  "vf.nav": ["Verify listing page", "લિસ્ટિંગ ચકાસણી", "लिस्टिंग सत्यापन"],
+  "vf.title": ["Verify your listing", "તમારું લિસ્ટિંગ ચકાસો", "अपनी लिस्टिंग सत्यापित करें"],
+  "vf.copy": ["Already on MySobo? Find your shop and send a listing request. Once the MySobo team accepts it, you manage it and it shows Verified ✓.", "MySobo પર પહેલેથી છો? તમારી દુકાન શોધો અને લિસ્ટિંગ વિનંતી મોકલો. MySobo ટીમ સ્વીકારે પછી તમે તેને સંભાળી શકો અને તે ચકાસાયેલ ✓ દેખાશે.", "MySobo पर पहले से हैं? अपनी दुकान खोजें और लिस्टिंग अनुरोध भेजें। MySobo टीम के स्वीकार करने के बाद आप उसे संभालेंगे और वह सत्यापित ✓ दिखेगी।"],
+  "vf.searchPh": ["Search your business by name", "નામથી તમારો વ્યવસાય શોધો", "नाम से अपना व्यवसाय खोजें"],
+  "vf.request": ["Request listing", "લિસ્ટિંગ વિનંતી", "लिस्टिंग अनुरोध"],
+  "vf.noMatch": ["Not found. Add it as a new business instead.", "મળ્યું નથી. નવો વ્યવસાય તરીકે ઉમેરો.", "नहीं मिला। नए व्यवसाय के रूप में जोड़ें।"],
+  "vf.proofTitle": ["Proof that you run {name}", "{name} તમે ચલાવો છો તેનો પુરાવો", "{name} आप चलाते हैं इसका प्रमाण"],
+  "vf.proofHint": ["Tell us what you can show: shop photo, visiting card, GST or shop licence. The MySobo team may call you to confirm.", "તમે શું બતાવી શકો તે જણાવો: દુકાનનો ફોટો, વિઝિટિંગ કાર્ડ, GST અથવા દુકાન લાઇસન્સ. MySobo ટીમ ખાતરી માટે કૉલ કરી શકે.", "बताएँ आप क्या दिखा सकते हैं: दुकान की फ़ोटो, विज़िटिंग कार्ड, GST या दुकान लाइसेंस। MySobo टीम पुष्टि के लिए कॉल कर सकती है।"],
+  "vf.proofPh": ["e.g. Shop licence number, or 'visiting card with my name'", "દા.ત. દુકાન લાઇસન્સ નંબર, અથવા 'મારા નામ સાથેનું વિઝિટિંગ કાર્ડ'", "जैसे दुकान लाइसेंस नंबर, या 'मेरे नाम का विज़िटिंग कार्ड'"],
+  "vf.submit": ["Submit listing request", "લિસ્ટિંગ વિનંતી મોકલો", "लिस्टिंग अनुरोध भेजें"],
+  "vf.sent": ["Listing request sent for {name}.", "{name} માટે લિસ્ટિંગ વિનંતી મોકલાઈ.", "{name} के लिए लिस्टिंग अनुरोध भेजा गया।"],
+  "vf.tracker": ["Your requests", "તમારી વિનંતીઓ", "आपके अनुरोध"],
+  "vf.none": ["No listing requests yet.", "હજી કોઈ લિસ્ટિંગ વિનંતી નથી.", "अभी कोई लिस्टिंग अनुरोध नहीं।"],
+  "vf.kViews": ["Profile views", "પ્રોફાઇલ વ્યૂ", "प्रोफ़ाइल व्यू"],
+  "vf.kCalls": ["Phone calls", "ફોન કૉલ", "फ़ोन कॉल"],
+  "vf.kWhatsapp": ["WhatsApp inquiries", "વોટ્સએપ પૂછપરછ", "व्हाट्सऐप पूछताछ"],
+  "vf.kComplete": ["Profile completeness", "પ્રોફાઇલ પૂર્ણતા", "प्रोफ़ाइल पूर्णता"],
+  "vf.k30": ["Last 30 days", "છેલ્લા 30 દિવસ", "पिछले 30 दिन"],
+  "vf.kCompleteHint": ["Add hours, WhatsApp and photos", "સમય, વોટ્સએપ અને ફોટા ઉમેરો", "समय, व्हाट्सऐप और फ़ोटो जोड़ें"],
+  "vf.weekendOffer": ["Post a weekend offer", "વીકએન્ડ ઓફર મૂકો", "वीकेंड ऑफ़र डालें"],
+  // Round 3: offers, plans, hours, settings, areas
+  "r3.expiry": ["Valid until (optional)", "ક્યાં સુધી માન્ય (વૈકલ્પિક)", "कब तक मान्य (वैकल्पिक)"],
+  "r3.until": ["until {date}", "{date} સુધી", "{date} तक"],
+  "r3.live": ["Live & published", "લાઇવ અને પ્રકાશિત", "लाइव और प्रकाशित"],
+  "r3.review": ["Under review", "ચકાસણી હેઠળ", "समीक्षा में"],
+  "r3.expired": ["Expired", "સમય પૂરો", "समाप्त"],
+  "r3.f.free1": ["3 photos", "3 ફોટા", "3 फ़ोटो"],
+  "r3.f.free2": ["1 offer a month", "મહિને 1 ઓફર", "महीने में 1 ऑफ़र"],
+  "r3.f.free3": ["Standard ranking", "સામાન્ય રેન્કિંગ", "सामान्य रैंकिंग"],
+  "r3.f.pro1": ["20 photos", "20 ફોટા", "20 फ़ोटो"],
+  "r3.f.pro2": ["4 offers a month", "મહિને 4 ઓફર", "महीने में 4 ऑफ़र"],
+  "r3.f.pro3": ["WhatsApp lead alerts", "વોટ્સએપ લીડ એલર્ટ", "व्हाट्सऐप लीड अलर्ट"],
+  "r3.f.pro4": ["Priority ranking", "પ્રાથમિક રેન્કિંગ", "प्राथमिक रैंकिंग"],
+  "r3.f.prem1": ["Unlimited photos and video", "અમર્યાદિત ફોટા અને વિડિયો", "असीमित फ़ोटो और वीडियो"],
+  "r3.f.prem2": ["Top rotating slot on the home page", "હોમ પેજ પર ટોચનું ફરતું સ્થાન", "होम पेज पर सबसे ऊपर घूमता स्थान"],
+  "r3.f.prem3": ["Weekly WhatsApp digest sponsorship", "સાપ્તાહિક વોટ્સએપ ડાયજેસ્ટ સ્પોન્સરશિપ", "साप्ताहिक व्हाट्सऐप डाइजेस्ट स्पॉन्सरशिप"],
+  "r3.f.prem4": ["Everything in Pro", "પ્રોમાં છે તે બધું", "प्रो की सारी सुविधाएँ"],
+  "r3.promo": ["First 100 verified businesses get 3 months free!", "પહેલા 100 ચકાસાયેલ વ્યવસાયને 3 મહિના મફત!", "पहले 100 सत्यापित व्यवसायों को 3 महीने मुफ़्त!"],
+  "r3.invoices": ["Invoices", "ઇન્વોઇસ", "इनवॉइस"],
+  "r3.invoiceNo": ["Invoice no.", "ઇન્વોઇસ નં.", "इनवॉइस नं."],
+  "r3.amount": ["Amount", "રકમ", "राशि"],
+  "r3.download": ["Download", "ડાઉનલોડ", "डाउनलोड"],
+  "r3.noInvoices": ["No invoices yet. They appear here after a plan payment.", "હજી કોઈ ઇન્વોઇસ નથી. પ્લાન ચુકવણી પછી અહીં દેખાશે.", "अभी कोई इनवॉइस नहीं। प्लान भुगतान के बाद यहाँ दिखेंगे।"],
+  "r3.hoursTitle": ["Opening hours", "ખુલવાનો સમય", "खुलने का समय"],
+  "r3.hoursHint": ["Residents see these on your listing, with Open now or Closed now.", "રહેવાસીઓ તમારા લિસ્ટિંગ પર આ જુએ છે, 'હમણાં ખુલ્લું' અથવા 'હમણાં બંધ' સાથે.", "निवासी आपकी लिस्टिंग पर यह देखते हैं, 'अभी खुला' या 'अभी बंद' के साथ।"],
+  "r3.open": ["Open", "ખુલ્લું", "खुला"],
+  "r3.opens": ["opens", "ખુલે છે", "खुलता है"],
+  "r3.closes": ["closes", "બંધ થાય છે", "बंद होता है"],
+  "r3.copyAll": ["Copy these times to all open days", "આ સમય બધા ખુલ્લા દિવસોમાં કૉપી કરો", "यह समय सभी खुले दिनों में कॉपी करें"],
+  "r3.saveHours": ["Save hours", "સમય સેવ કરો", "समय सेव करें"],
+  "r3.hoursSaved": ["Opening hours saved.", "ખુલવાનો સમય સેવ થયો.", "खुलने का समय सेव हो गया।"],
+  "r3.privacy": ["Privacy", "ગોપનીયતા", "गोपनीयता"],
+  "r3.hideAddress": ["Hide my address", "મારું સરનામું છુપાવો", "मेरा पता छिपाएँ"],
+  "r3.hideAddressHint": ["For home-based businesses. Residents see only your area.", "ઘરેથી ચાલતા વ્યવસાય માટે. રહેવાસીઓને ફક્ત વિસ્તાર દેખાશે.", "घर से चलने वाले व्यवसाय के लिए। निवासियों को केवल इलाका दिखेगा।"],
+  "r3.notifications": ["Notifications", "સૂચનાઓ", "सूचनाएँ"],
+  "r3.leadAlerts": ["WhatsApp lead alerts", "વોટ્સએપ લીડ એલર્ટ", "व्हाट्सऐप लीड अलर्ट"],
+  "r3.leadAlertsHint": ["Get a WhatsApp message when a resident calls or messages you.", "કોઈ રહેવાસી કૉલ કે મેસેજ કરે ત્યારે વોટ્સએપ મેસેજ મેળવો.", "जब कोई निवासी कॉल या मैसेज करे तो व्हाट्सऐप मैसेज पाएँ।"],
+  "r3.switchResident": ["Switch to resident view", "રહેવાસી વ્યૂ પર જાઓ", "निवासी व्यू पर जाएँ"],
+  "r3.offersOnListing": ["Offers", "ઓફર", "ऑफ़र"],
+  "r3.area": ["Area", "વિસ્તાર", "इलाका"],
+  "r3.allAreas": ["All of South Bopal", "આખું સાઉથ બોપલ", "पूरा साउथ बोपल"],
+  "catd.medical-and-health": ["Paediatricians, dentists, 24/7 chemists", "બાળરોગ નિષ્ણાત, ડેન્ટિસ્ટ, 24/7 કેમિસ્ટ", "बाल रोग विशेषज्ञ, दंत चिकित्सक, 24/7 केमिस्ट"],
+  "catd.tuition-and-coaching": ["CBSE/ICSE home tutors, maths, science", "CBSE/ICSE હોમ ટ્યુટર, ગણિત, વિજ્ઞાન", "CBSE/ICSE होम ट्यूटर, गणित, विज्ञान"],
+  "catd.house-help": ["Maids, cooks, nannies, elder care", "કામવાળા, રસોઇયા, આયા, વડીલ સંભાળ", "बाई, रसोइया, आया, बुज़ुर्ग देखभाल"],
+  "catd.food-and-dining": ["Cafes, home bakers, tiffin services", "કાફે, હોમ બેકર, ટિફિન સેવા", "कैफ़े, होम बेकर, टिफ़िन सेवा"],
+  "catd.home-services": ["AC repair, plumbers, electricians, RO", "AC રિપેર, પ્લમ્બર, ઇલેક્ટ્રિશિયન, RO", "AC रिपेयर, प्लंबर, इलेक्ट्रीशियन, RO"],
+  "catd.fitness-and-wellness": ["Gyms, yoga, box cricket and pickleball turfs", "જિમ, યોગ, બોક્સ ક્રિકેટ અને પિકલબોલ ટર્ફ", "जिम, योग, बॉक्स क्रिकेट और पिकलबॉल टर्फ"],
+  "catd.bakery-and-confectionery": ["Breads, cakes, eggless treats", "બ્રેડ, કેક, એગલેસ વાનગીઓ", "ब्रेड, केक, एगलेस व्यंजन"],
+  "catd.grocery-and-supermarkets": ["Daily groceries and staples", "રોજિંદી કરિયાણું", "रोज़ाना किराना"],
+  // Resident dashboard spec
+  "ph.nav": ["Photos", "ફોટા", "फ़ोटो"],
+  "ph.title": ["Photos", "ફોટા", "फ़ोटो"],
+  "ph.sub": ["Add photos of your shop, work and products. Choose a cover and a logo for your listing.", "તમારી દુકાન, કામ અને ઉત્પાદનોના ફોટા ઉમેરો. તમારા લિસ્ટિંગ માટે કવર અને લોગો પસંદ કરો.", "अपनी दुकान, काम और उत्पादों की फ़ोटो जोड़ें। अपनी लिस्टिंग के लिए कवर और लोगो चुनें।"],
+  "ph.business": ["Business", "વ્યવસાય", "व्यवसाय"],
+  "ph.upload": ["Upload photos", "ફોટા અપલોડ કરો", "फ़ोटो अपलोड करें"],
+  "ph.count": ["{n} of {limit} photos", "{limit} માંથી {n} ફોટા", "{limit} में से {n} फ़ोटो"],
+  "ph.morePhotos": ["Get more photo space", "વધુ ફોટા માટે પ્લાન બદલો", "ज़्यादा फ़ोटो के लिए प्लान बदलें"],
+  "ph.dismiss": ["Dismiss", "બંધ કરો", "बंद करें"],
+  "ph.ready": ["Ready to upload", "અપલોડ માટે તૈયાર", "अपलोड के लिए तैयार"],
+  "ph.cancel": ["Cancel", "રદ કરો", "रद्द करें"],
+  "ph.addMore": ["Add more", "વધુ ઉમેરો", "और जोड़ें"],
+  "ph.uploadN": ["Upload {n}", "{n} અપલોડ કરો", "{n} अपलोड करें"],
+  "ph.uploading": ["Uploading… {n}%", "અપલોડ થઈ રહ્યું છે… {n}%", "अपलोड हो रहा है… {n}%"],
+  "ph.removeFile": ["Remove {name}", "{name} દૂર કરો", "{name} हटाएँ"],
+  "ph.dropTitle": ["Drag photos here, or click to choose", "ફોટા અહીં ખેંચો, અથવા પસંદ કરવા ક્લિક કરો", "फ़ोटो यहाँ खींचें, या चुनने के लिए क्लिक करें"],
+  "ph.dropHint": ["JPG, PNG or WebP · up to 8 MB each · you'll see them before saving", "JPG, PNG અથવા WebP · દરેક 8 MB સુધી · સેવ કરતાં પહેલાં જોઈ શકશો", "JPG, PNG या WebP · हर एक 8 MB तक · सेव करने से पहले देख सकेंगे"],
+  "ph.dropNow": ["Drop to add photos", "ફોટા ઉમેરવા છોડો", "फ़ोटो जोड़ने के लिए छोड़ें"],
+  "ph.library": ["Your photos", "તમારા ફોટા", "आपकी फ़ोटो"],
+  "ph.dragHint": ["Drag photos to change their order on your listing", "લિસ્ટિંગ પર ક્રમ બદલવા ફોટા ખેંચો", "लिस्टिंग पर क्रम बदलने के लिए फ़ोटो खींचें"],
+  "ph.loadError": ["Photos could not be loaded.", "ફોટા લોડ થઈ શક્યા નહીં.", "फ़ोटो लोड नहीं हो सकीं।"],
+  "ph.none": ["No photos yet. Listings with photos get more calls.", "હજી કોઈ ફોટો નથી. ફોટાવાળા લિસ્ટિંગને વધુ કૉલ મળે છે.", "अभी कोई फ़ोटो नहीं। फ़ोटो वाली लिस्टिंग को ज़्यादा कॉल मिलते हैं।"],
+  "ph.previewN": ["Preview photo {n}", "ફોટો {n} જુઓ", "फ़ोटो {n} देखें"],
+  "ph.photoN": ["Photo {n}", "ફોટો {n}", "फ़ोटो {n}"],
+  "ph.actions": ["Actions for photo {n}", "ફોટો {n} માટે વિકલ્પો", "फ़ोटो {n} के विकल्प"],
+  "ph.cover": ["Cover", "કવર", "कवर"],
+  "ph.logo": ["Logo", "લોગો", "लोगो"],
+  "ph.preview": ["Preview", "જુઓ", "देखें"],
+  "ph.makeCover": ["Set as cover", "કવર બનાવો", "कवर बनाएँ"],
+  "ph.makeLogo": ["Set as logo", "લોગો બનાવો", "लोगो बनाएँ"],
+  "ph.replace": ["Replace", "બદલો", "बदलें"],
+  "ph.moveEarlier": ["Move earlier", "આગળ ખસેડો", "आगे ले जाएँ"],
+  "ph.moveLater": ["Move later", "પાછળ ખસેડો", "पीछे ले जाएँ"],
+  "ph.delete": ["Delete", "કાઢી નાખો", "हटाएँ"],
+  "ph.deleteTitle": ["Delete this photo?", "આ ફોટો કાઢી નાખવો છે?", "यह फ़ोटो हटानी है?"],
+  "ph.deleteText": ["It will be removed from your listing. This can't be undone.", "તે તમારા લિસ્ટિંગમાંથી દૂર થશે. આ પાછું લઈ શકાશે નહીં.", "यह आपकी लिस्टिंग से हट जाएगी। इसे वापस नहीं लाया जा सकता।"],
+  "ph.deleteCover": ["This is your cover. The next photo will become the cover. This can't be undone.", "આ તમારું કવર છે. પછીનો ફોટો કવર બનશે. આ પાછું લઈ શકાશે નહીં.", "यह आपका कवर है। अगली फ़ोटो कवर बन जाएगी। इसे वापस नहीं लाया जा सकता।"],
+  "ph.errType": ["Use a JPG, PNG or WebP image", "JPG, PNG અથવા WebP ફોટો વાપરો", "JPG, PNG या WebP फ़ोटो इस्तेमाल करें"],
+  "ph.errSize": ["Larger than 8 MB", "8 MB થી મોટો", "8 MB से बड़ी"],
+  "ph.overLimit": ["{n} photo(s) were left out: your plan allows {limit}.", "{n} ફોટા બાકી રહ્યા: તમારો પ્લાન {limit} સુધી આપે છે.", "{n} फ़ोटो छूट गईं: आपका प्लान {limit} तक देता है।"],
+  "ph.uploaded": ["{n} photo(s) uploaded.", "{n} ફોટા અપલોડ થયા.", "{n} फ़ोटो अपलोड हुईं।"],
+  "ph.coverSet": ["Cover photo updated.", "કવર ફોટો બદલાયો.", "कवर फ़ोटो बदली गई।"],
+  "ph.logoSet": ["Logo updated.", "લોગો બદલાયો.", "लोगो बदला गया।"],
+  "ph.deleted": ["Photo deleted.", "ફોટો કાઢી નાખ્યો.", "फ़ोटो हटाई गई।"],
+  "ph.reordered": ["Order saved.", "ક્રમ સેવ થયો.", "क्रम सेव हुआ।"],
+  "ph.replaced": ["Photo replaced.", "ફોટો બદલાયો.", "फ़ोटो बदली गई।"],
+  "ph.noBusiness": ["Add a business first", "પહેલાં વ્યવસાય ઉમેરો", "पहले व्यवसाय जोड़ें"],
+  "ph.noBusinessText": ["Photos belong to a listing. Add your business, then come back to upload photos.", "ફોટા લિસ્ટિંગના હોય છે. તમારો વ્યવસાય ઉમેરો, પછી ફોટા અપલોડ કરવા પાછા આવો.", "फ़ोटो लिस्टिंग की होती हैं। अपना व्यवसाय जोड़ें, फिर फ़ोटो अपलोड करने लौटें।"],
+  "ph.viewer": ["Photo viewer", "ફોટો વ્યૂઅર", "फ़ोटो व्यूअर"],
+  "ph.close": ["Close", "બંધ કરો", "बंद करें"],
+  "ph.prev": ["Previous photo", "પાછલો ફોટો", "पिछली फ़ोटो"],
+  "ph.next": ["Next photo", "આગળનો ફોટો", "अगली फ़ोटो"],
+  "lp.photos": ["Photos", "ફોટા", "फ़ोटो"],
+  "lp.seeAll": ["See all {n}", "બધા {n} જુઓ", "सभी {n} देखें"],
+  "hub.title1": ["One neighbourhood.", "એક પડોશ.", "एक पड़ोस।"],
+  "hub.title2": ["One platform.", "એક પ્લેટફોર્મ.", "एक प्लेटफ़ॉर्म।"],
+  "hub.sub": ["MySobo brings people and the places they rely on closer together, so South Bopal feels a little smaller and a lot friendlier.", "MySobo લોકો અને તેઓ જેના પર આધાર રાખે છે તે જગ્યાઓને નજીક લાવે છે, જેથી સાઉથ બોપલ થોડું નાનું અને ઘણું વધારે મૈત્રીપૂર્ણ લાગે.", "MySobo लोगों और उनकी भरोसे की जगहों को करीब लाता है, ताकि साउथ बोपल थोड़ा छोटा और बहुत ज़्यादा अपनापन भरा लगे।"],
+  "hub.diagram": ["MySobo connects residents with shops, cafés, tutors, services and doctors", "MySobo રહેવાસીઓને દુકાનો, કાફે, ટ્યુટર, સેવાઓ અને ડૉક્ટર સાથે જોડે છે", "MySobo निवासियों को दुकानों, कैफ़े, ट्यूटर, सेवाओं और डॉक्टरों से जोड़ता है"],
+  "hub.residents": ["Residents", "રહેવાસીઓ", "निवासी"],
+  "hub.shops": ["Shops", "દુકાનો", "दुकानें"],
+  "hub.cafes": ["Cafés", "કાફે", "कैफ़े"],
+  "hub.tutors": ["Tutors", "ટ્યુટર", "ट्यूटर"],
+  "hub.services": ["Services", "સેવાઓ", "सेवाएँ"],
+  "hub.doctors": ["Doctors", "ડૉક્ટર", "डॉक्टर"],
+  "hub.e1": ["Your neighbourhood.", "તમારો પડોશ.", "आपका पड़ोस।"],
+  "hub.e2": ["Your world.", "તમારી દુનિયા.", "आपकी दुनिया।"],
+  "hub.e3": ["Everything closer.", "બધું નજીક.", "सब कुछ करीब।"],
+  "hub.e4": ["Everyone connected.", "સૌ જોડાયેલા.", "सब जुड़े हुए।"],
+  "rs.pill": ["South Bopal · Local services & neighbourhood businesses", "સાઉથ બોપલ · સ્થાનિક સેવાઓ અને પડોશના વ્યવસાય", "साउथ बोपल · स्थानीय सेवाएँ और पड़ोस के व्यवसाय"],
+  "rs.sub": ["Connect directly with verified home cleaners, emergency plumbers, tutors, tiffin services and clinics in South Bopal, Shela and Ghuma.", "સાઉથ બોપલ, શેલા અને ઘુમાના ચકાસાયેલ ઘર સફાઈ, ઇમર્જન્સી પ્લમ્બર, ટ્યુટર, ટિફિન સેવા અને ક્લિનિક સાથે સીધો સંપર્ક કરો.", "साउथ बोपल, शेला और घुमा के सत्यापित घर सफ़ाई, इमरजेंसी प्लंबर, ट्यूटर, टिफ़िन सेवा और क्लिनिक से सीधे जुड़ें।"],
+  "rs.searchPh": ["Search by service, business name, area or keyword…", "સેવા, વ્યવસાયનું નામ, વિસ્તાર અથવા શબ્દથી શોધો…", "सेवा, व्यवसाय के नाम, इलाके या शब्द से खोजें…"],
+  "rs.searchHelp": ["Matches name, description, address, phone, WhatsApp or category", "નામ, વર્ણન, સરનામું, ફોન, વોટ્સએપ અથવા કેટેગરી સાથે મેળ", "नाम, विवरण, पता, फ़ोन, व्हाट्सऐप या श्रेणी से मेल"],
+  "rs.chars": ["{n} / 120 chars", "{n} / 120 અક્ષર", "{n} / 120 अक्षर"],
+  "rs.filterType": ["Filter listing type:", "લિસ્ટિંગ પ્રકાર:", "लिस्टिंग प्रकार:"],
+  "rs.browse": ["Browse categories", "કેટેગરી જુઓ", "श्रेणियाँ देखें"],
+  "rs.browseSub": ["Explore local services and stores verified in South Bopal", "સાઉથ બોપલમાં ચકાસાયેલ સ્થાનિક સેવાઓ અને દુકાનો જુઓ", "साउथ बोपल में सत्यापित स्थानीय सेवाएँ और दुकानें देखें"],
+  "rs.active": ["{n} active", "{n} સક્રિય", "{n} सक्रिय"],
+  "rs.showing": ["Showing:", "બતાવે છે:", "दिखा रहे हैं:"],
+  "rs.clear": ["Clear", "દૂર કરો", "हटाएँ"],
+  "rs.clearAll": ["Clear all", "બધું દૂર કરો", "सब हटाएँ"],
+  "rs.waText": ["Hi {name}, I found you on MySobo and have a question.", "નમસ્તે {name}, મેં તમને MySobo પર જોયા, મારે એક પ્રશ્ન છે.", "नमस्ते {name}, मैंने आपको MySobo पर देखा, मेरा एक सवाल है।"],
+  // Plan comparison table
+  "pt.title": ["Compare plans", "પ્લાનની સરખામણી", "प्लान की तुलना"],
+  "pt.feature": ["Feature", "સુવિધા", "सुविधा"],
+  "pt.popular": ["Most popular", "સૌથી લોકપ્રિય", "सबसे लोकप्रिय"],
+  "pt.price": ["Monthly price", "માસિક કિંમત", "मासिक कीमत"],
+  "pt.mo": ["mo", "મહિને", "माह"],
+  "pt.included": ["Included", "સામેલ", "शामिल"],
+  "pt.notIncluded": ["Not included", "સામેલ નથી", "शामिल नहीं"],
+  "pt.badge": ["Verified green trust badge (✓)", "ચકાસાયેલ લીલો વિશ્વાસ બેજ (✓)", "सत्यापित हरा भरोसा बैज (✓)"],
+  "pt.oneTap": ["1-tap Call & WhatsApp buttons", "1-ટૅપ કૉલ અને વોટ્સએપ બટન", "1-टैप कॉल और व्हाट्सऐप बटन"],
+  "pt.search": ["Search by society & category", "સોસાયટી અને કેટેગરીથી શોધ", "सोसायटी और श्रेणी से खोज"],
+  "pt.hide": ["Hide address (for home businesses)", "સરનામું છુપાવો (ઘરેથી ચાલતા વ્યવસાય)", "पता छिपाएँ (घर से चलने वाले व्यवसाय)"],
+  "pt.photos": ["Photo uploads", "ફોટો અપલોડ", "फ़ोटो अपलोड"],
+  "pt.placement": ["Category search placement", "કેટેગરી શોધમાં સ્થાન", "श्रेणी खोज में स्थान"],
+  "pt.offers": ["Offers in “What's New” feed", "“નવું શું છે” ફીડમાં ઓફર", "“नया क्या है” फ़ीड में ऑफ़र"],
+  "pt.alerts": ["Instant WhatsApp lead alerts", "તરત વોટ્સએપ લીડ એલર્ટ", "तुरंत व्हाट्सऐप लीड अलर्ट"],
+  "pt.launch": ["New opening launch feature", "નવી શરૂઆતનું લોન્ચ ફીચર", "नई शुरुआत लॉन्च फ़ीचर"],
+  "pt.digest": ["Weekly WhatsApp digest feature", "સાપ્તાહિક વોટ્સએપ ડાયજેસ્ટ ફીચર", "साप्ताहिक व्हाट्सऐप डाइजेस्ट फ़ीचर"],
+  "pt.analytics": ["Enquiry & call analytics", "પૂછપરછ અને કૉલ એનાલિટિક્સ", "पूछताछ और कॉल एनालिटिक्स"],
+  "pt.v.photos3": ["Up to 3", "3 સુધી", "3 तक"],
+  "pt.v.photos20": ["Up to 20", "20 સુધી", "20 तक"],
+  "pt.v.photosAll": ["Unlimited + video", "અમર્યાદિત + વિડિયો", "असीमित + वीडियो"],
+  "pt.v.standard": ["Standard", "સામાન્ય", "सामान्य"],
+  "pt.v.priority": ["Priority (higher)", "પ્રાથમિક (ઉપર)", "प्राथमिक (ऊपर)"],
+  "pt.v.top": ["Top #1–2 rotating slot", "ટોચ #1–2 ફરતું સ્થાન", "शीर्ष #1–2 घूमता स्थान"],
+  "pt.v.offer1": ["1 / month", "1 / મહિને", "1 / माह"],
+  "pt.v.offer4": ["4 / month (weekly)", "4 / મહિને (સાપ્તાહિક)", "4 / माह (साप्ताहिक)"],
+  "pt.v.unlimited": ["Unlimited", "અમર્યાદિત", "असीमित"],
+  "pt.v.boost1": ["1 week boost", "1 અઠવાડિયું બૂસ્ટ", "1 सप्ताह बूस्ट"],
+  "pt.v.boost2": ["2 weeks + push alert", "2 અઠવાડિયા + પુશ એલર્ટ", "2 सप्ताह + पुश अलर्ट"],
+  "pt.v.sponsored": ["Included (sponsored)", "સામેલ (સ્પોન્સર્ડ)", "शामिल (प्रायोजित)"],
+  "pt.v.basic": ["Basic views", "સામાન્ય વ્યૂ", "सामान्य व्यू"],
+  "pt.v.full": ["Full dashboard", "સંપૂર્ણ ડેશબોર્ડ", "पूरा डैशबोर्ड"],
+  "pt.v.fullReport": ["Full + monthly report", "સંપૂર્ણ + માસિક રિપોર્ટ", "पूरा + मासिक रिपोर्ट"],
+} as const satisfies Record<string, readonly [string, string, string]>;
+
+export type MessageKey = keyof typeof messages;
+type Vars = Record<string, string | number>;
+
+const LANG_INDEX: Record<Lang, 0 | 1 | 2> = { en: 0, gu: 1, hi: 2 };
+
+function isLang(value: unknown): value is Lang {
+  return value === "gu" || value === "en" || value === "hi";
+}
+
+function initialLang(): Lang {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (isLang(stored)) return stored;
+  } catch {
+    // Storage can be unavailable (private mode); fall back to the default.
+  }
+  return DEFAULT_LANG;
+}
+
+type I18n = {
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+  t: (key: MessageKey, vars?: Vars) => string;
+};
+
+const I18nContext = createContext<I18n | null>(null);
+
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>(initialLang);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Ignore storage errors; the choice still applies for this visit.
+    }
+  }, []);
+
+  const t = useCallback((key: MessageKey, vars?: Vars) => {
+    const entry = messages[key];
+    let text: string = entry[LANG_INDEX[lang]] || entry[0];
+    if (vars) {
+      for (const [name, value] of Object.entries(vars)) {
+        text = text.split(`{${name}}`).join(String(value));
+      }
+    }
+    return text;
+  }, [lang]);
+
+  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useT() {
+  const context = useContext(I18nContext);
+  if (!context) throw new Error("useT must be used inside LanguageProvider");
+  return context;
+}
+
+export function LanguageSwitch() {
+  const { lang, setLang, t } = useT();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const current = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="langMenu" ref={wrapRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="langButton"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${t("lang.label")}: ${current.label}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+        </svg>
+        <span lang={current.code}>{current.short}</span>
+      </button>
+      {open && (
+        <div className="langList" role="menu" aria-label={t("lang.label")}>
+          {LANGUAGES.map((item) => (
+            <button
+              key={item.code}
+              type="button"
+              role="menuitemradio"
+              aria-checked={lang === item.code}
+              lang={item.code}
+              className={lang === item.code ? "active" : ""}
+              onClick={() => {
+                setLang(item.code);
+                setOpen(false);
+                buttonRef.current?.focus();
+              }}
+            >
+              <span>{item.label}</span>
+              {lang === item.code && (
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

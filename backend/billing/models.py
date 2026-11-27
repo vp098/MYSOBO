@@ -46,6 +46,15 @@ class SubscriptionRequest(models.Model):
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("business",),
+                condition=models.Q(status="pending"),
+                name="one_pending_plan_request_per_business",
+            ),
+        ]
+
 
 class Payment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -322,6 +322,50 @@ class CategoryFieldAdminSerializer(serializers.ModelSerializer):
         return attrs
 
 
+
+def _viewer_access(context, user):
+    """Businesses the viewer manages and whether they are staff, computed once
+    per response (a list of 20 businesses no longer costs 40 extra queries)."""
+    if not (user and user.is_authenticated):
+        return frozenset(), False
+    cached = context.get("_viewer_access")
+    if cached is None:
+        from .models import BusinessMember
+        member_ids = frozenset(BusinessMember.objects.filter(user=user).values_list("business_id", flat=True))
+        cached = (member_ids, user.admin_roles.exists())
+        context["_viewer_access"] = cached
+    return cached
+
+
+CONTACT_FIELDS = ("phone", "whatsapp", "email")
+
+
+def mask_phone(value):
+    """Show only the last two digits, e.g. "98XXX XXX12"."""
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if len(digits) < 4:
+        return ""
+    digits = digits[-10:]
+    hidden = "X" * (len(digits) - 2) + digits[-2:]
+    return f"{hidden[:5]} {hidden[5:]}" if len(hidden) > 5 else hidden
+
+
+def hide_contact_details(data, user):
+    """Residents must sign in to see a business's phone, WhatsApp and email."""
+    if user and user.is_authenticated:
+        data["contact_locked"] = False
+        return data
+    has_contact = any(data.get(field) for field in CONTACT_FIELDS if field in data)
+    for field in ("phone", "whatsapp"):
+        if field in data:
+            data[f"{field}_masked"] = mask_phone(data[field])
+            data[field] = ""
+    if "email" in data:
+        data["email"] = ""
+    data["contact_locked"] = has_contact
+    return data
+
+
 class BusinessSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     subcategory = SubcategorySerializer(read_only=True)
@@ -342,11 +386,11 @@ class BusinessSerializer(serializers.ModelSerializer):
             "hide_address", "lat", "lng", "society", "specialties", "photos", "hours",
             "average_rating", "review_count", "verified",
             "verification_level", "source", "hidden", "plan", "plan_expires_on",
-            "deleted_at", "created_at", "updated_at",
+            "approval_requested_at", "deleted_at", "created_at", "updated_at",
         )
         read_only_fields = (
             "id", "verification_level", "source", "hidden", "plan",
-            "plan_expires_on", "deleted_at", "created_at", "updated_at",
+            "plan_expires_on", "approval_requested_at", "deleted_at", "created_at", "updated_at",
         )
 
     def create(self, validated_data):
@@ -450,8 +494,8 @@ class BusinessSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        member = bool(user and user.is_authenticated and instance.members.filter(user=user).exists())
-        admin = bool(user and user.is_authenticated and user.admin_roles.exists())
+        member_ids, admin = _viewer_access(self.context, user)
+        member = instance.pk in member_ids
         privileged = member or admin or getattr(user, "is_superuser", False)
         if (instance.hide_address or instance.hidden) and not privileged:
             data["address"] = None
@@ -465,7 +509,7 @@ class BusinessSerializer(serializers.ModelSerializer):
                 "deleted_at",
             ):
                 data.pop(field, None)
-        return data
+        return hide_contact_details(data, user)
 
 
 class BusinessHourSerializer(serializers.ModelSerializer):
@@ -489,6 +533,11 @@ class BusinessSummarySerializer(serializers.ModelSerializer):
 
     def get_verified(self, instance):
         return instance.verification_level >= 2
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        return hide_contact_details(data, getattr(request, "user", None))
 
     def get_address(self, instance):
         request = self.context.get("request")
@@ -610,21 +659,36 @@ class BusinessServiceSerializer(serializers.ModelSerializer):
 
 
 class ReviewSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source="user.username", read_only=True)
+    user_name = serializers.SerializerMethodField()
+    mine = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
-        fields = ("id", "rating", "body", "user_name", "created_at")
-        read_only_fields = ("id", "user_name", "created_at")
+        fields = ("id", "rating", "body", "user_name", "mine", "created_at")
+        read_only_fields = ("id", "user_name", "mine", "created_at")
+
+    def get_mine(self, instance):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and instance.user_id == user.pk)
 
     def validate_rating(self, value):
         if not 1 <= value <= 5:
             raise serializers.ValidationError("Rating must be between 1 and 5.")
         return value
 
+    def get_user_name(self, instance):
+        """Public display name like "Hetal S.". Never the username, which can contain a mobile number."""
+        user = instance.user
+        profile_name = getattr(getattr(user, "profile", None), "name", "") or ""
+        words = f"{user.first_name} {user.last_name}".split() or profile_name.split()
+        if not words:
+            return "Resident"
+        return f"{words[0]} {words[1][0]}." if len(words) > 1 else words[0]
+
 
 class BusinessPostSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessPost
-        fields = ("id", "business", "title", "body", "image_path", "status", "created_at")
+        fields = ("id", "business", "title", "body", "image_path", "expires_on", "status", "created_at")
         read_only_fields = ("id", "status", "created_at")

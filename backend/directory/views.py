@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Exists, OuterRef, Prefetch, Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -10,6 +11,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.exceptions import ValidationError as APIValidationError
 
 from .models import (
+    BusinessPost,
     Business,
     BusinessHour,
     BusinessMember,
@@ -506,7 +508,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Business.objects.filter(deleted_at__isnull=True).select_related(
             "category", "subcategory", "society"
-        ).prefetch_related("photos", "hours").annotate(
+        ).prefetch_related("photos", "hours", "category__fields").annotate(
             average_rating=Avg("reviews__rating"),
             review_count=Count("reviews", distinct=True),
         )
@@ -542,12 +544,17 @@ class BusinessViewSet(viewsets.ModelViewSet):
                 _matches_product=Exists(matching_products),
                 _matches_service=Exists(matching_services),
             )
+            # Searching by phone number only for signed-in users, so the
+            # search box cannot be used to look up hidden numbers.
+            phone_match = (
+                Q(phone__icontains=query) | Q(whatsapp__icontains=query)
+                if self.request.user.is_authenticated else Q(pk__in=[])
+            )
             qs = qs.filter(
                 Q(name__icontains=query)
                 | Q(description__icontains=query)
                 | Q(address__icontains=query)
-                | Q(phone__icontains=query)
-                | Q(whatsapp__icontains=query)
+                | phone_match
                 | Q(category__name__icontains=query)
                 | Q(subcategory__name__icontains=query)
                 | Q(_matches_product=True)
@@ -626,6 +633,8 @@ class BusinessViewSet(viewsets.ModelViewSet):
             verification_level=0,
             hidden=True,
             created_by=self.request.user,
+            # New listings go straight into the admin's "Listing Requested" queue.
+            approval_requested_at=timezone.now(),
         )
         BusinessMember.objects.create(
             user=self.request.user,
@@ -651,8 +660,8 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def events(self, request, pk=None):
         business = self.get_object()
         event_type = request.data.get("type")
-        if event_type not in ("call", "whatsapp"):
-            raise APIValidationError({"type": "Choose call or whatsapp."})
+        if event_type not in ("call", "whatsapp", "view"):
+            raise APIValidationError({"type": "Choose view, call or whatsapp."})
         Event.objects.create(
             business=business,
             user=request.user if request.user.is_authenticated else None,
@@ -688,13 +697,17 @@ class BusinessViewSet(viewsets.ModelViewSet):
         business = self.get_object()
         if request.method == "GET":
             reviews = business.reviews.select_related("user").all()
-            return Response(ReviewSerializer(reviews, many=True).data)
+            return Response(ReviewSerializer(reviews, many=True, context={"request": request}).data)
         serializer = ReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         if Review.objects.filter(business=business, user=request.user).exists():
-            return Response({"detail": "You have already reviewed this business."}, status=409)
-        review = serializer.save(business=business, user=request.user)
-        return Response(ReviewSerializer(review).data, status=201)
+            return Response({"detail": "You have already reviewed this business.", "code": "conflict"}, status=409)
+        try:
+            with transaction.atomic():
+                review = serializer.save(business=business, user=request.user)
+        except IntegrityError:
+            return Response({"detail": "You have already reviewed this business.", "code": "conflict"}, status=409)
+        return Response(ReviewSerializer(review, context={"request": request}).data, status=201)
 
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def report(self, request, pk=None):
@@ -709,6 +722,18 @@ class BusinessViewSet(viewsets.ModelViewSet):
         )
         return Response({"id": str(report.id), "status": report.status}, status=201)
 
+    @action(detail=True, methods=["get"], permission_classes=[permissions.AllowAny])
+    def offers(self, request, pk=None):
+        business = self.get_object()
+        today = timezone.localdate()
+        posts = business.posts.filter(status=BusinessPost.Status.APPROVED).filter(
+            Q(expires_on__isnull=True) | Q(expires_on__gte=today)
+        ).order_by("-created_at")[:10]
+        return Response([{
+            "id": str(post.id), "title": post.title, "body": post.body,
+            "expires_on": post.expires_on, "created_at": post.created_at,
+        } for post in posts])
+
     @action(detail=True, methods=["get", "post", "delete"], permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def saved(self, request, pk=None):
         business = self.get_object()
@@ -717,7 +742,11 @@ class BusinessViewSet(viewsets.ModelViewSet):
                 business=business, user=request.user
             ).exists()} if request.user.is_authenticated else {"saved": False})
         if request.method == "POST":
-            SavedBusiness.objects.get_or_create(business=business, user=request.user)
+            try:
+                with transaction.atomic():
+                    SavedBusiness.objects.get_or_create(business=business, user=request.user)
+            except IntegrityError:
+                pass  # a parallel tap already saved it
             return Response({"saved": True})
         SavedBusiness.objects.filter(business=business, user=request.user).delete()
         return Response({"saved": False})

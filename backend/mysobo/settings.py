@@ -65,6 +65,13 @@ elif not DEBUG and SECRET_KEY.lower() in {
 
 IS_CI = env("CI", "false").strip().lower() == "true"
 
+# "Sign in with Google": the OAuth client ID from Google Cloud Console.
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "")
+
+# Preview only: sign in with any email, no verification. Admin accounts are
+# never allowed through it. MUST be false for launch.
+DEMO_EMAIL_LOGIN = env_bool("DEMO_EMAIL_LOGIN", False)
+
 OTP_SMS_BACKEND = env(
     "OTP_SMS_BACKEND",
     "console" if DEBUG else "twilio"
@@ -198,6 +205,13 @@ TEMPLATES = [
 # --------------------------------------------------
 
 DATABASE_URL = env("DATABASE_URL")
+# Reuse database connections for up to this many seconds instead of opening a
+# new one per request. Health checks drop dead connections before use.
+DB_CONN_MAX_AGE = int(env("DB_CONN_MAX_AGE", "60"))
+# Per-request limits, applied with SET LOCAL inside each request's transaction
+# (safe behind the transaction pooler). Migrations and commands are not limited.
+DB_STATEMENT_TIMEOUT_MS = int(env("DB_STATEMENT_TIMEOUT_MS", "5000"))
+DB_LOCK_TIMEOUT_MS = int(env("DB_LOCK_TIMEOUT_MS", "3000"))
 
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
@@ -212,13 +226,20 @@ if DATABASE_URL:
         DATABASES = {
             "default": dj_database_url.parse(
                 DATABASE_URL,
-                conn_max_age=0,
+                conn_max_age=DB_CONN_MAX_AGE,
+                conn_health_checks=True,
                 ssl_require=env_bool(
                     "DB_SSL_REQUIRED",
                     not DEBUG
                 ),
             )
         }
+        # Supabase's transaction pooler (port 6543, Supavisor/PgBouncer) hands each
+        # transaction to any server connection: no server-side cursors or
+        # prepared statements can survive between transactions.
+        if parsed.port == 6543 or env_bool("DB_TRANSACTION_POOLER", False):
+            DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+            DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 
     elif parsed.scheme == "sqlite" and DEBUG:
 
@@ -274,7 +295,8 @@ else:
             "PASSWORD": env("DB_PASSWORD"),
             "HOST": env("DB_HOST"),
             "PORT": env("DB_PORT"),
-            "CONN_MAX_AGE": 0,
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
+            "CONN_HEALTH_CHECKS": True,
             "OPTIONS": {
                 "sslmode": "require",
             },
@@ -441,6 +463,7 @@ CSRF_TRUSTED_ORIGINS = [
 # --------------------------------------------------
 
 REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "mysobo.exceptions.api_exception_handler",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -457,6 +480,9 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "business_contact_event": "60/min",
+        "google_login": "20/min",
+        "demo_login": "20/min",
+        "photo_upload": "60/hour",
     },
 }
 
@@ -497,4 +523,19 @@ if not DEBUG:
 SPECTACULAR_SETTINGS = {
     "TITLE": "MySobo API",
     "VERSION": "1.0.0",
+}
+
+# --------------------------------------------------
+# LOGGING: errors go to the server log, never to API responses
+# --------------------------------------------------
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "loggers": {
+        "mysobo.api": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+    },
 }

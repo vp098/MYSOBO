@@ -48,6 +48,8 @@ jobs:
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,testserver"
       OTP_SMS_BACKEND: "mock"
       DATABASE_URL: "postgresql://mysobo:mysobo-ci-password@localhost:5432/mysobo"
+      # The CI Postgres service has no SSL; production keeps SSL required.
+      DB_SSL_REQUIRED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

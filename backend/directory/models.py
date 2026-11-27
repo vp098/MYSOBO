@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
+from django.utils import timezone
 from django.core.validators import FileExtensionValidator
 
 from accounts.models import Society
@@ -130,6 +131,7 @@ class Business(models.Model):
     verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     verified_on = models.DateTimeField(null=True, blank=True)
     verification_note = models.TextField(blank=True)
+    approval_requested_at = models.DateTimeField(null=True, blank=True)
     source = models.CharField(max_length=50)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     hidden = models.BooleanField(default=False)
@@ -142,6 +144,12 @@ class Business(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["category", "verification_level"]),
+            models.Index(
+                fields=["category", "verification_level", "hidden", "deleted_at"],
+                name="business_cat_ver_hid_del_idx",
+            ),
+            models.Index(fields=["society", "deleted_at"], name="business_society_del_idx"),
+            models.Index(fields=["hidden", "deleted_at", "-created_at"], name="business_public_recent_idx"),
             models.Index(fields=["society"]),
             GinIndex(fields=["name"], opclasses=["gin_trgm_ops"], name="business_name_trgm_idx"),
             GinIndex(
@@ -230,6 +238,17 @@ class Claim(models.Model):
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            # One open listing request per person per business, even if two
+            # taps arrive at the same moment.
+            models.UniqueConstraint(
+                fields=("user", "business"),
+                condition=models.Q(status="pending"),
+                name="claim_one_pending_per_user_business",
+            ),
+        ]
+
 
 class BusinessHour(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="hours")
@@ -247,6 +266,11 @@ class BusinessPhoto(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="photos")
     path = models.ImageField(upload_to="business-photos/")
     sort = models.IntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ("sort", "created_at")
+        indexes = [models.Index(fields=["business", "sort"], name="photo_business_sort_idx")]
 
 
 class BusinessPost(models.Model):
@@ -260,9 +284,13 @@ class BusinessPost(models.Model):
     title = models.CharField(max_length=200, blank=True)
     body = models.TextField(blank=True)
     image_path = models.CharField(max_length=500, blank=True)
+    expires_on = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["business", "status", "expires_on"], name="post_business_status_idx")]
 
 
 class CivicUpdate(models.Model):
@@ -310,6 +338,9 @@ class Event(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     type = models.CharField(max_length=30)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["business", "type", "created_at"], name="event_business_type_time_idx")]
 
 
 class EventDaily(models.Model):
