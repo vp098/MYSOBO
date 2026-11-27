@@ -4,9 +4,18 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
-from accounts.views import OTPRequestView, OTPVerifyView
+from accounts.views import DemoEmailLoginView, GoogleLoginView, OTPRequestView, OTPVerifyView
 from directory.portal_views import (
+    AdminAuditView,
     AdminBusinessesView,
+    AdminPostsView,
+    AdminReportsView,
+    AdminSettingsView,
+    OwnerStatsView,
+    HealthView,
+    OwnerHoursView,
+    OwnerInvoicesView,
+    PreferencesView,
     AdminBusinessImportView,
     AdminBusinessVerifyView,
     AdminClaimsView,
@@ -17,6 +26,8 @@ from directory.portal_views import (
     CurrentUserView,
     LogoutView,
     OwnerBusinessesView,
+    OwnerRequestApprovalView,
+    SavedBusinessesView,
     OwnerClaimableBusinessesView,
     OwnerClaimsView,
     OwnerPlansView,
@@ -25,14 +36,19 @@ from directory.portal_views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/health/", HealthView.as_view(), name="health"),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),
     path("api/auth/login/", obtain_auth_token, name="auth-login"),
     path("api/auth/otp/request/", OTPRequestView.as_view(), name="auth-otp-request"),
     path("api/auth/otp/verify/", OTPVerifyView.as_view(), name="auth-otp-verify"),
+    path("api/auth/google/", GoogleLoginView.as_view(), name="auth-google"),
+    path("api/auth/demo-email/", DemoEmailLoginView.as_view(), name="auth-demo-email"),
     path("api/auth/me/", CurrentUserView.as_view(), name="auth-me"),
     path("api/auth/logout/", LogoutView.as_view(), name="auth-logout"),
     path("api/owner/businesses/", OwnerBusinessesView.as_view(), name="owner-businesses"),
+    path("api/owner/businesses/<uuid:business_id>/request-approval/", OwnerRequestApprovalView.as_view(), name="owner-request-approval"),
+    path("api/me/saved/", SavedBusinessesView.as_view(), name="me-saved"),
     path("api/owner/claimable/", OwnerClaimableBusinessesView.as_view(), name="owner-claimable"),
     path("api/owner/claims/", OwnerClaimsView.as_view(), name="owner-claims"),
     path("api/owner/posts/", OwnerPostsView.as_view(), name="owner-posts"),
@@ -45,6 +61,14 @@ urlpatterns = [
     path("api/admin/plan-requests/", AdminPlanRequestsView.as_view(), name="admin-plan-requests"),
     path("api/admin/plans/", AdminPlansView.as_view(), name="admin-plans"),
     path("api/admin/payments/", AdminPaymentsView.as_view(), name="admin-payments"),
+    path("api/admin/posts/", AdminPostsView.as_view(), name="admin-posts"),
+    path("api/admin/reports/", AdminReportsView.as_view(), name="admin-reports"),
+    path("api/admin/audit/", AdminAuditView.as_view(), name="admin-audit"),
+    path("api/admin/settings/", AdminSettingsView.as_view(), name="admin-settings"),
+    path("api/owner/stats/", OwnerStatsView.as_view(), name="owner-stats"),
+    path("api/owner/businesses/<uuid:business_id>/hours/", OwnerHoursView.as_view(), name="owner-hours"),
+    path("api/owner/invoices/", OwnerInvoicesView.as_view(), name="owner-invoices"),
+    path("api/me/preferences/", PreferencesView.as_view(), name="me-preferences"),
     path("api/", include("directory.urls")),
 ]
 

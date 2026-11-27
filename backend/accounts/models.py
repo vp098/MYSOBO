@@ -25,6 +25,7 @@ class Profile(models.Model):
     society = models.ForeignKey(Society, null=True, blank=True, on_delete=models.SET_NULL)
     consent_at = models.DateTimeField(null=True, blank=True)
     consent_version = models.CharField(max_length=32, blank=True)
+    whatsapp_alerts = models.BooleanField(default=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

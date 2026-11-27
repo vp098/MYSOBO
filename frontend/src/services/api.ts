@@ -116,6 +116,9 @@ export type Business = {
   plan?: "free" | "pro" | "premium";
   plan_expires_on?: string | null;
   hidden?: boolean;
+  approval_requested_at?: string | null;
+  review_note?: string;
+  created_at?: string;
   source?: string;
   email?: string;
   website?: string;
@@ -185,6 +188,8 @@ export type PortalUser = {
   id: string;
   username: string;
   mobile: string | null;
+  email?: string;
+  name?: string;
   is_superadmin: boolean;
 };
 
@@ -194,4 +199,5 @@ export type Review = {
   body: string;
   user_name: string;
   created_at: string;
+  mine?: boolean;
 };

@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from .models import OTPChallenge, Profile, User
@@ -121,3 +122,103 @@ class OTPAuthTests(TestCase):
         self.assertEqual(missing.status_code, 400)
         self.assertEqual(declined.status_code, 400)
         self.assertFalse(OTPChallenge.objects.exists())
+
+
+class GoogleLoginTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+        self.claims = {
+            "aud": "test-client.apps.googleusercontent.com",
+            "iss": "https://accounts.google.com",
+            "exp": str(int(__import__("time").time()) + 600),
+            "email": "Owner@Gmail.com",
+            "email_verified": "true",
+            "sub": "1234567890",
+            "given_name": "Hetal",
+            "family_name": "Shah",
+            "name": "Hetal Shah",
+        }
+
+    def login(self, claims):
+        from unittest import mock
+        from django.test import override_settings
+        with override_settings(GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.com"), \
+                mock.patch("accounts.google.fetch_token_info", return_value=claims):
+            return self.client.post("/api/auth/google/", {"credential": "x" * 40}, format="json")
+
+    def test_new_google_user_gets_token_and_account(self):
+        response = self.login(self.claims)
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(email="owner@gmail.com")
+        self.assertEqual(user.first_name, "Hetal")
+        self.assertFalse(user.has_usable_password())
+        me = self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Token {response.json()['token']}")
+        self.assertEqual(me.json()["email"], "owner@gmail.com")
+
+    def test_existing_email_signs_into_same_account(self):
+        existing = User.objects.create_user(username="old", email="owner@gmail.com", password="x")
+        response = self.login(self.claims)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(User.objects.filter(email__iexact="owner@gmail.com").count(), 1)
+        self.assertEqual(Token.objects.get(key=response.json()["token"]).user, existing)
+
+    def test_rejects_token_for_another_app(self):
+        response = self.login({**self.claims, "aud": "someone-else"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email__iexact="owner@gmail.com").exists())
+
+    def test_rejects_unverified_email(self):
+        self.assertEqual(self.login({**self.claims, "email_verified": "false"}).status_code, 400)
+
+    def test_rejects_expired_token(self):
+        self.assertEqual(self.login({**self.claims, "exp": "100"}).status_code, 400)
+
+    def test_inactive_user_cannot_sign_in(self):
+        User.objects.create_user(username="off", email="owner@gmail.com", is_active=False)
+        self.assertEqual(self.login(self.claims).status_code, 403)
+
+    def test_not_configured_returns_503(self):
+        from django.test import override_settings
+        with override_settings(GOOGLE_CLIENT_ID=""):
+            response = self.client.post("/api/auth/google/", {"credential": "x"}, format="json")
+        self.assertEqual(response.status_code, 503)
+
+
+class DemoEmailLoginTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+
+    def post(self, email):
+        return self.client.post("/api/auth/demo-email/", {"email": email}, format="json")
+
+    @override_settings(DEMO_EMAIL_LOGIN=False)
+    def test_disabled_by_default(self):
+        self.assertEqual(self.post("a@b.com").status_code, 404)
+        self.assertFalse(User.objects.filter(email="a@b.com").exists())
+
+    @override_settings(DEMO_EMAIL_LOGIN=True)
+    def test_any_email_signs_in_and_reuses_account(self):
+        first = self.post("Riya.Shah@Gmail.com")
+        self.assertEqual(first.status_code, 200)
+        second = self.post("riya.shah@gmail.com")
+        self.assertEqual(first.json()["token"], second.json()["token"])
+        user = User.objects.get(email="riya.shah@gmail.com")
+        self.assertEqual((user.first_name, user.last_name), ("Riya", "Shah"))
+
+    @override_settings(DEMO_EMAIL_LOGIN=True)
+    def test_rejects_bad_email(self):
+        self.assertEqual(self.post("not-an-email").status_code, 400)
+
+    @override_settings(DEMO_EMAIL_LOGIN=True)
+    def test_never_signs_into_admin_accounts(self):
+        from .models import AdminRole
+        staff = User.objects.create_user(username="boss", email="boss@mysobo.in", password="x", is_staff=True)
+        admin = User.objects.create_user(username="ops", email="ops@mysobo.in", password="x")
+        AdminRole.objects.create(user=admin, role=AdminRole.Role.SUPER_ADMIN)
+        self.assertEqual(self.post("boss@mysobo.in").status_code, 403)
+        self.assertEqual(self.post("ops@mysobo.in").status_code, 403)
+        self.assertFalse(Token.objects.filter(user__in=[staff, admin]).exists())

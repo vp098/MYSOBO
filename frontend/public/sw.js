@@ -1,6 +1,6 @@
 /* MySobo service worker: makes the app installable and keeps the app shell
    available offline. API and media requests always go to the network. */
-const CACHE = "mysobo-shell-v1";
+const CACHE = "mysobo-shell-v2";
 const SHELL = ["/mysobo", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

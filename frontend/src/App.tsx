@@ -1,3 +1,4 @@
+import { LeafMark, Logo, PinScene } from "./logo";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -20,18 +21,26 @@ import {
   type Review,
   type Subcategory,
 } from "./services/api";
-import { LanguageSwitch, useT } from "./i18n";
+import { LanguageSwitch, useT, type MessageKey } from "./i18n";
 import { InstallButton } from "./pwa";
 import { OwnerDashboard } from "./owner";
+import { SuperAdminDashboard } from "./superadmin";
+import { coverFor, coverForCategory } from "./covers";
+import { ListingPage } from "./listing";
+import { Onboarding, shouldOnboard } from "./onboarding";
+import { DEMO_LOGIN_ENABLED, EmailSignIn, GoogleSignIn, SMS_OTP_ENABLED } from "./google";
 
 export function Shell({
   children,
   user,
   onAuthChange,
+  bottomNav,
 }: {
   children: ReactNode;
   user?: PortalUser;
   onAuthChange: () => void;
+  /** Phone tab bar. Omit for the resident tabs; pass null for none. */
+  bottomNav?: ReactNode | null;
 }) {
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -62,14 +71,14 @@ export function Shell({
   }
 
   return (
-    <div className="app">
+    <div className={`app ${bottomNav === null ? "" : "hasTabbar"}`}>
       <header className="topbar">
         <a className="brand" href="/mysobo" aria-label={t("nav.home")}>
-          <span>mysobo</span><span className="brandDot" aria-hidden="true">.</span>
+          <Logo size={30} />
         </a>
         <nav>
-          <a href="/mysobo">{t("nav.residents")}</a>
-          <a href="/mysobo/owner">{t("nav.business")}</a>
+          <a className="topLink" href="/mysobo">{t("nav.residents")}</a>
+          <a className="topLink" href="/mysobo/owner">{t("nav.business")}</a>
           {user?.is_superadmin && <a href="/mysobo/superadmin">{t("nav.superadmin")}</a>}
           <InstallButton />
           <LanguageSwitch />
@@ -86,14 +95,15 @@ export function Shell({
       </header>
       {logoutError && <p className="formError topError">{logoutError}</p>}
       <main>{children}</main>
-      {params.get("dialog") === "login" && (
-        <LoginDialog onClose={closeLogin} onSuccess={loginComplete} />
+      {bottomNav === undefined ? <ResidentTabbar /> : bottomNav}
+      {(params.get("dialog") === "login" || params.get("dialog") === "signup") && (
+        <LoginDialog onClose={closeLogin} onSuccess={loginComplete} startWith={params.get("dialog") === "signup" ? "signup" : "login"} />
       )}
     </div>
   );
 }
 
-function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () => void; onSuccess: () => void; startWith?: "login" | "signup" }) {
   const { t } = useT();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -166,16 +176,34 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
     }
   }
 
+  if (DEMO_LOGIN_ENABLED && mode === "otp") {
+    return (
+      <div className="modalBackdrop" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}>
+        <section className="authCard modalCard authScreen" role="dialog" aria-modal="true" aria-labelledby="login-title">
+          <button className="modalClose" type="button" onClick={onClose} aria-label={t("close")}>×</button>
+          <EmailSignIn startWith={startWith} onSuccess={onSuccess} onPassword={() => setMode("password")} />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="modalBackdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <section className="authCard modalCard" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <button className="modalClose" type="button" onClick={onClose} aria-label={t("close")}>×</button>
+        <span className="authLogo"><LeafMark size={60} /></span>
         <p className="eyebrow">{t("login.eyebrow")}</p>
         <h1 id="login-title">{t("login.title")}</h1>
-        <p className="mutedText">{t("login.intro")}</p>
-        {mode === "otp" ? (
+        <p className="mutedText">{DEMO_LOGIN_ENABLED ? t("login.introEmail") : SMS_OTP_ENABLED ? t("login.intro") : t("login.introGoogle")}</p>
+        {mode === "otp" && DEMO_LOGIN_ENABLED ? (
+          <EmailSignIn startWith={startWith} onSuccess={onSuccess} onPassword={() => setMode("password")} />
+        ) : mode === "otp" && !SMS_OTP_ENABLED ? (
+          <GoogleSignIn onSuccess={onSuccess} />
+        ) : mode === "otp" ? (
           codeRequested ? (
             <form onSubmit={verifyOtp}>
               <p className="mutedText">{t("login.enterCode", { mobile })}</p>
@@ -230,7 +258,7 @@ function LoginDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
           setMode((current) => current === "otp" ? "password" : "otp");
           setError("");
           setNotice("");
-        }}>{mode === "otp" ? t("login.usePassword") : t("login.useOtp")}</button>
+        }}>{mode === "otp" ? t("login.usePassword") : DEMO_LOGIN_ENABLED ? t("login.useEmail") : SMS_OTP_ENABLED ? t("login.useOtp") : t("login.useGoogle")}</button>
       </section>
     </div>
   );
@@ -240,21 +268,32 @@ function SearchBox() {
   const [params, setParams] = useSearchParams();
   const [value, setValue] = useState(params.get("q") ?? "");
   const { t } = useT();
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const next = new URLSearchParams(params);
+  function apply(text: string) {
+    const next = new URLSearchParams(paramsRef.current);
     next.delete("listing");
-    if (value.trim()) next.set("q", value.trim());
+    if (text.trim()) next.set("q", text.trim());
     else next.delete("q");
-    setParams(next);
+    if ((paramsRef.current.get("q") ?? "") !== (next.get("q") ?? "")) setParams(next, { replace: true });
   }
 
+  // Results update as you type (short pause so we do not search on every key).
+  useEffect(() => {
+    const timer = window.setTimeout(() => apply(value), 350);
+    return () => window.clearTimeout(timer);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <form className="search searchLarge" onSubmit={submit}>
-      <span aria-hidden="true">⌕</span>
-      <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder={t("search.placeholder")} aria-label={t("search.label")} />
-      <button type="submit">{t("search.button")}</button>
+    <form className="searchBlock" role="search" onSubmit={(event: FormEvent) => { event.preventDefault(); apply(value); }}>
+      <div className="search searchLarge">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></svg>
+        <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder={t("rs.searchPh")} aria-label={t("search.label")} />
+        {value && <button type="button" className="searchClear" aria-label={t("close")} onClick={() => setValue("")}>×</button>}
+        <button type="submit">{t("search.button")}</button>
+      </div>
+      <p className="searchHelp"><span>{t("rs.searchHelp")}</span><span>{t("rs.chars", { n: value.length })}</span></p>
     </form>
   );
 }
@@ -263,32 +302,178 @@ function categoryIcon(category: Category) {
   if (category.icon_image) {
     return <img src={category.icon_image} alt="" />;
   }
-  return category.icon || category.name.trim().charAt(0).toUpperCase() || "•";
+  return <img src={coverForCategory(category.slug, category.name)} alt="" />;
+}
+
+const AREAS = ["Safal Parisar", "Gala Haven", "Orchid Whitefield", "Bopal 44", "Aarohi Crest", "Sobo Center", "Shela", "Ghuma"];
+const CAT_BLURBS = ["medical-and-health", "tuition-and-coaching", "house-help", "food-and-dining", "home-services", "fitness-and-wellness", "bakery-and-confectionery", "grocery-and-supermarkets"];
+
+function TabIcon({ d }: { d: ReactNode }) {
+  return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{d}</svg>;
+}
+
+function ResidentTabbar() {
+  const { t } = useT();
+  const location = useLocation();
+  const path = location.pathname;
+  const items: { href: string; label: string; icon: ReactNode; active: boolean }[] = [
+    { href: "/mysobo", label: t("nav.explore"), active: path === "/mysobo" && location.hash !== "#categories", icon: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></> },
+    { href: "/mysobo#categories", label: t("nav.categories"), active: path.startsWith("/services") || path.startsWith("/products") || path.startsWith("/categories") || location.hash === "#categories", icon: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></> },
+    { href: "/mysobo/saved", label: t("nav.saved"), active: path === "/mysobo/saved", icon: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /> },
+    { href: "/mysobo/owner", label: t("nav.myBusiness"), active: path.startsWith("/mysobo/owner"), icon: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M5.5 11v8.5h13V11M10 19.5v-4h4v4" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /></> },
+  ];
+  return (
+    <nav className="tabbar" aria-label={t("nav.home")}>
+      {items.map((item) => (
+        <Link
+          key={item.href}
+          to={item.href}
+          className={item.active ? "active" : ""}
+          aria-current={item.active ? "page" : undefined}
+          onClick={() => {
+            if (item.href.endsWith("#categories")) {
+              window.setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 60);
+            }
+          }}
+        >
+          <TabIcon d={item.icon} /><span>{item.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function openState(business: Business): "open" | "closed" | "" {
+  const hours = business.hours ?? [];
+  if (!hours.length) return "";
+  const now = new Date();
+  const today = hours.find((item) => item.dow === (now.getDay() + 6) % 7);
+  if (!today || today.closed || !today.opens || !today.closes) return "closed";
+  const hm = now.toTimeString().slice(0, 5);
+  return today.opens.slice(0, 5) <= hm && hm < today.closes.slice(0, 5) ? "open" : "closed";
+}
+
+function useSavedSet() {
+  const signedIn = Boolean(sessionStorage.getItem("mysobo-token"));
+  const { data } = useQuery({
+    queryKey: ["my-saved"],
+    queryFn: () => apiGet<Business[]>("/me/saved/"),
+    enabled: signedIn,
+    retry: false,
+  });
+  return { signedIn, saved: new Set((data ?? []).map((item) => item.id)) };
 }
 
 function BusinessCards({ businesses }: { businesses: Business[] }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const { signedIn, saved } = useSavedSet();
   const { t } = useT();
   if (!businesses.length) {
     return <div className="emptyState"><h2>{t("cards.noneTitle")}</h2><p>{t("cards.noneText")}</p></div>;
   }
+  const weekAgo = Date.now() - 7 * 864e5;
+
+  function contact(business: Business, type: "call" | "whatsapp") {
+    const number = (type === "call" ? business.phone : business.whatsapp || business.phone) ?? "";
+    if (!signedIn || !number) {
+      const next = new URLSearchParams(params);
+      next.set("dialog", "login");
+      setParams(next);
+      return;
+    }
+    const digits = number.replace(/\D/g, "").slice(-10);
+    void apiPost(`/businesses/${encodeURIComponent(business.slug)}/events/`, { type }).catch(() => undefined);
+    if (type === "call") window.location.assign(`tel:+91${digits}`);
+    else window.open(`https://wa.me/91${digits}?text=${encodeURIComponent(t("rs.waText", { name: business.name }))}`, "_blank", "noopener,noreferrer");
+  }
+
+  async function toggle(business: Business) {
+    if (!signedIn) {
+      const next = new URLSearchParams(params);
+      next.set("dialog", "login");
+      setParams(next);
+      return;
+    }
+    const url = `/businesses/${encodeURIComponent(business.slug)}/saved/`;
+    if (saved.has(business.id)) await apiDelete(url);
+    else await apiPost(url);
+    await queryClient.invalidateQueries({ queryKey: ["my-saved"] });
+    await queryClient.invalidateQueries({ queryKey: ["saved", business.slug] });
+  }
+
   return (
-    <div className="businessGrid">
-      {businesses.map((business) => (
-        <button className="businessCard" type="button" key={business.id} aria-label={t("cards.open", { name: business.name })} onClick={() => navigate(`/business/${encodeURIComponent(business.slug)}`)}>
-          <span className="businessAvatar">{business.name.charAt(0)}</span>
-          <span className="businessCardCopy">
-            <span className="businessNameRow">
-              <strong>{business.name}</strong>
-              {business.verified && <span className="verifiedBadge" title={t("verified")}>✓</span>}
-            </span>
-            <span className="businessDescription">{business.description || t("cards.inSouthBopal", { kind: t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service") })}</span>
-            {business.address && !business.hide_address && <small>{business.address}</small>}
-          </span>
-          <span className="cardArrow">→</span>
-        </button>
-      ))}
+    <div className="bizGrid">
+      {businesses.map((business) => {
+        const isSaved = saved.has(business.id);
+        const kindLabel = t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service");
+        return (
+          <article className="bizCard" key={business.id}>
+            <button className="bizOpen" type="button" aria-label={t("cards.open", { name: business.name })} onClick={() => navigate(`/business/${encodeURIComponent(business.slug)}`)}>
+              <span className="bizCover">
+                <img src={coverFor(business)} alt="" loading="lazy" />
+                {business.category && <span className="bizTag">{business.category.name}</span>}
+                {business.created_at && Date.parse(business.created_at) > weekAgo && <span className="bizNew">{t("cards.new")}</span>}
+              </span>
+              <span className="bizBody">
+                <strong>{business.name}{business.verified && <span className="vTick" title={t("vf.verified")}>✓</span>}</strong>
+                {business.address && !business.hide_address && <small className="bizArea">{business.address}</small>}
+                <span className="bizStats">
+                  {business.verified && <span className="bizVerified">✓ {t("vf.verified")}</span>}
+                  {business.review_count ? <span className="bizRating">★ {(business.average_rating ?? 0).toFixed(1)} <em>({business.review_count})</em></span> : null}
+                  <span className="bizKind">{kindLabel}</span>
+                  {openState(business) && <span className={openState(business) === "open" ? "bizOpenNow" : "bizClosedNow"}>{openState(business) === "open" ? t("lp.openNow") : t("lp.closedNow")}</span>}
+                </span>
+                <span className="bizDesc">{business.description || t("cards.inSouthBopal", { kind: kindLabel })}</span>
+              </span>
+            </button>
+            <div className="bizActions">
+              <button type="button" className="bizAct call" onClick={() => contact(business, "call")}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M6.6 3.5h2.6l1.4 4-2 1.3a12 12 0 0 0 6.6 6.6l1.3-2 4 1.4v2.6a2 2 0 0 1-2.2 2A17 17 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" /></svg>{t("listing.call")}
+              </button>
+              <button type="button" className="bizAct wa" onClick={() => contact(business, "whatsapp")}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" /></svg>{t("listing.whatsapp")}
+              </button>
+            </div>
+            <button
+              type="button"
+              className={`bizHeart ${isSaved ? "on" : ""}`}
+              aria-pressed={isSaved}
+              aria-label={t(isSaved ? "cards.unsave" : "cards.save", { name: business.name })}
+              onClick={() => void toggle(business)}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
+            </button>
+          </article>
+        );
+      })}
     </div>
+  );
+}
+
+function SavedPage({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
+  const { t } = useT();
+  const signedIn = Boolean(sessionStorage.getItem("mysobo-token"));
+  const { data = [], isLoading } = useQuery({
+    queryKey: ["my-saved"],
+    queryFn: () => apiGet<Business[]>("/me/saved/"),
+    enabled: signedIn,
+    retry: false,
+  });
+  return (
+    <Shell user={user} onAuthChange={onAuthChange}>
+      <section className="section savedPage">
+        <p className="eyebrow">{t("nav.saved")}</p>
+        <h1>{t("saved.title")}</h1>
+        <p className="mutedText">{t("saved.copy")}</p>
+        {!signedIn ? (
+          <div className="emptyState"><img src="/mascot/mithu.png" alt="" width="80" height="80" /><p>{t("saved.signIn")}</p><Link className="button" to="/mysobo/saved?dialog=login">{t("nav.login")}</Link></div>
+        ) : isLoading ? <p className="emptyState">{t("home.finding")}</p>
+          : data.length ? <BusinessCards businesses={data} />
+            : <div className="emptyState"><img src="/mascot/mithu.png" alt="" width="80" height="80" /><p>{t("saved.empty")}</p><Link className="button" to="/mysobo">{t("nav.explore")}</Link></div>}
+      </section>
+    </Shell>
   );
 }
 
@@ -436,11 +621,12 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
         <button className="modalClose" type="button" onClick={close} aria-label={t("close")}>×</button>
         {isLoading ? <p>{t("listing.loading")}</p> : business ? (
           <>
+            <div className="listingCover"><img src={coverFor(business)} alt="" /></div>
             <div className="listingHeader">
-              <span className="listingAvatar">{business.name.charAt(0)}</span>
               <div>
                 <p className="eyebrow">{business.category?.name ?? t("listing.defaultCategory")}</p>
-                <div className="businessNameRow"><h2>{business.name}</h2>{business.verified && <span className="verifiedBadge">✓</span>}</div>
+                <div className="businessNameRow"><h2>{business.name}</h2></div>
+                {business.review_count ? <p className="bizStats"><span className="bizRating">★ {(business.average_rating ?? 0).toFixed(1)} <em>({t("cards.reviews", { n: business.review_count })})</em></span></p> : null}
               </div>
             </div>
             <p className="listingDescription">{business.description || t("listing.defaultDesc")}</p>
@@ -500,6 +686,9 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   const selectedCategory = params.get("category") ?? "";
   const selectedSubcategory = params.get("subcategory") ?? "";
   const query = params.get("q") ?? "";
+  const area = params.get("area") ?? (() => { try { return localStorage.getItem("mysobo-area") ?? ""; } catch { return ""; } })();
+  const [onboarding, setOnboarding] = useState(() => !user && !params.get("dialog") && shouldOnboard());
+  const [allCategoriesOpen, setAllCategoriesOpen] = useState(() => window.matchMedia("(max-width: 900px)").matches);
   const {
     data: categories,
     isLoading: categoriesLoading,
@@ -515,10 +704,11 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
     isError: businessesError,
     refetch: refetchBusinesses,
   } = useQuery({
-    queryKey: ["businesses", query, selectedCategory, selectedSubcategory, kind],
+    queryKey: ["businesses", query, selectedCategory, selectedSubcategory, kind, area],
     queryFn: () => {
       const filters = new URLSearchParams();
       if (query) filters.set("q", query);
+      if (area) filters.set("location", area);
       if (selectedCategory) filters.set("category", selectedCategory);
       if (selectedSubcategory) filters.set("subcategory", selectedSubcategory);
       filters.set("kind", kind);
@@ -527,11 +717,12 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   });
   const businesses = Array.isArray(businessData) ? businessData : businessData?.results ?? [];
   const allCategories = categories ?? [];
-  const visibleCategories = kind === "service"
+  const visibleCategories = (kind === "service"
     ? allCategories.filter((category) => category.supports_services)
     : kind === "product"
       ? allCategories.filter((category) => category.supports_products)
-      : allCategories;
+      : allCategories
+  ).slice().sort((a, b) => (b.listing_count ?? 0) - (a.listing_count ?? 0));
   const selectedCategoryRecord = visibleCategories.find((category) => category.slug === selectedCategory);
   const selectedCategoryName = selectedCategoryRecord?.name;
   const visibleSubcategories = selectedCategoryRecord?.subcategories ?? [];
@@ -589,9 +780,12 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
     <Shell user={user} onAuthChange={onAuthChange}>
       <section className="hero">
         <div className="heroCopy">
-          <p className="eyebrow">{t("home.place")}</p>
+          <p className="heroPill"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6zM19 14l.9 2.6L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.4z" /></svg>{t("rs.pill")}</p>
           <h1>{t("home.title1")}<br />{t("home.title2")}</h1>
+          <p className="heroSub">{t("rs.sub")}</p>
           <SearchBox />
+          <div className="heroFilters">
+          <span className="heroFilterLabel">{t("rs.filterType")}</span>
           <div className="kindTabs" aria-label={t("home.tabsLabel")}>
             {["all", "service", "product"].map((item) => (
               <button
@@ -605,34 +799,76 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
               </button>
             ))}
           </div>
+          <label className="areaPick">
+            <span className="srOnly">{t("r3.area")}</span>
+            <LeafMark size={16} />
+            <select value={area} onChange={(event) => {
+              const value = event.target.value;
+              try { localStorage.setItem("mysobo-area", value); } catch { /* ignore */ }
+              setFilter("area", value);
+            }}>
+              <option value="">{t("r3.allAreas")}</option>
+              {AREAS.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          </div>
         </div>
-        <div className="heroArt" aria-hidden="true"><div className="heroCircle"><span>{t("hero.top")}</span><strong>{t("hero.big")}</strong><span>{t("hero.bottom")}</span></div></div>
+        <div className="heroArt" aria-hidden="true">
+          <div className="heroStage">
+            <span className="heroShape a" /><span className="heroShape b" /><span className="heroShape c" />
+            <div className="heroPreview">
+              <p className="heroPreviewTitle"><LeafMark size={18} />{t("home.previewTitle")}</p>
+              <div className="heroPreviewMap"><PinScene /></div>
+              <ul>
+                {businesses.slice(0, 3).map((business) => (
+                  <li key={business.id}>
+                    <img src={coverFor(business)} alt="" />
+                    <span><b>{business.name}</b><small>{business.category?.name ?? ""}{business.review_count ? ` · ★ ${(business.average_rating ?? 0).toFixed(1)}` : ""}</small></span>
+                    <em>{t("listing.call")}</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section className="trustStrip" aria-label={t("home.trustedBy")}>
+        <p>{t("home.trustedBy")}</p>
+        <ul>
+          {["Safal Parisar", "Iscon Platinum", "Shivalik Sharda", "Applewoods", "Sun City", "Shela", "Ghuma"].map((name) => (
+            <li key={name}><LeafMark size={16} />{name}</li>
+          ))}
+        </ul>
       </section>
 
-      <section className="section categorySection">
+      <section className="section categorySection" id="categories">
         <div className="sectionTitle">
-          <div><p className="eyebrow">{t("home.browseLocal")}</p><h2>{t("home.popular")}</h2></div>
+          <div><h2>{t("rs.browse")}</h2><p className="mutedText sectionSub">{t("rs.browseSub")}</p></div>
           {selectedCategory && <button className="textLink resetFilter" type="button" onClick={() => setFilter("category", "")}>{t("home.clearCategory")}</button>}
         </div>
-        <div className="categoryGrid">
-          {visibleCategories.map((category) => (
-            <button
-              className={`categoryCard ${selectedCategory === category.slug ? "selectedCategory" : ""}`}
-              type="button"
-              onClick={() => navigate(
-                kind === "service" ? `/services/${category.slug}`
-                  : kind === "product" ? `/products/${category.slug}`
-                    : `/categories/${category.slug}`
-              )}
-              key={category.id || category.slug}
-            >
-              <span className="categoryIcon">{categoryIcon(category)}</span>
-              <strong>{category.name}</strong>
-              <small>{t("listings.count", { n: category.listing_count })}</small>
-              <span className="cardArrow">→</span>
-            </button>
-          ))}
+        <div className="catGrid">
+          {(allCategoriesOpen ? visibleCategories : visibleCategories.slice(0, 6)).map((category) => {
+            const on = selectedCategory === category.slug;
+            return (
+              <button
+                className={`catCard ${on ? "on" : ""}`}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setFilter("category", on ? "" : category.slug)}
+                key={category.id || category.slug}
+              >
+                <span className="categoryIcon">{categoryIcon(category)}</span>
+                <span className="catText">
+                  <span className="catTop"><strong>{category.name}</strong><em>{t("rs.active", { n: category.listing_count })}</em></span>
+                  {CAT_BLURBS.includes(category.slug) && <span className="catBlurb">{t(`catd.${category.slug}` as MessageKey)}</span>}
+                </span>
+              </button>
+            );
+          })}
         </div>
+        {!allCategoriesOpen && visibleCategories.length > 6 && (
+          <button type="button" className="smallButton seeAllCategories" onClick={() => setAllCategoriesOpen(true)}>{t("home.seeAllCats", { n: visibleCategories.length })}</button>
+        )}
         {selectedCategoryRecord && visibleSubcategories.length > 0 && (
           <div className="subcategoryList" aria-label={t("home.subLabel", { name: selectedCategoryName ?? "" })}>
             <button
@@ -678,6 +914,15 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           </div>
           {businessData !== undefined && <span className="mutedText">{t("listings.count", { n: businesses.length })}</span>}
         </div>
+        {(selectedCategoryName || query || area) && (
+          <div className="activeFilters">
+            <span>{t("rs.showing")}</span>
+            {selectedCategoryName && <button type="button" className="filterChip" onClick={() => setFilter("category", "")}>{selectedCategoryName} <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
+            {query && <button type="button" className="filterChip" onClick={() => setFilter("q", "")}>“{query}” <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
+            {area && <button type="button" className="filterChip" onClick={() => { try { localStorage.removeItem("mysobo-area"); } catch { /* ignore */ } setFilter("area", ""); }}>{area} <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
+            <button type="button" className="textLink" onClick={() => { try { localStorage.removeItem("mysobo-area"); } catch { /* ignore */ } setParams(new URLSearchParams(kind === "all" ? {} : { kind })); }}>{t("rs.clearAll")}</button>
+          </div>
+        )}
         {isLoading ? <p className="emptyState">{t("home.finding")}</p> : businessesError && businessData === undefined ? (
           <div className="emptyState" role="alert">
             <h2>{t("err.listingsTitle")}</h2>
@@ -702,6 +947,14 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           </div>
         )}
       </section>
+      {onboarding && <Onboarding onDone={(nextStep) => {
+        setOnboarding(false);
+        if (nextStep) {
+          const next = new URLSearchParams(params);
+          next.set("dialog", nextStep);
+          setParams(next);
+        }
+      }} />}
       {params.get("listing") && <ListingDialog
         slug={params.get("listing")!}
         user={user}
@@ -817,7 +1070,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
     const formData = new FormData(event.currentTarget);
     const next = new URLSearchParams(params);
     next.delete("page");
-    for (const key of ["q", "location", "verified", "min_rating", "min_price", "max_price", "ordering"]) {
+    for (const key of ["q", "location", "min_rating", "min_price", "max_price", "ordering"]) {
       const value = String(formData.get(key) ?? "").trim();
       if (value) next.set(key, value);
       else next.delete(key);
@@ -902,7 +1155,6 @@ function CategoryPage({ kind, user, onAuthChange }: {
                 <label>{t("cat.minRating")}<select name="min_rating" defaultValue={params.get("min_rating") ?? ""}>
                   <option value="">{t("cat.anyRating")}</option><option value="4">{t("cat.starsPlus", { n: 4 })}</option><option value="3">{t("cat.starsPlus", { n: 3 })}</option>
                 </select></label>
-                <label className="checkLabel"><input name="verified" type="checkbox" value="true" defaultChecked={params.get("verified") === "true"} /> {t("cat.verifiedOnly")}</label>
                 {kind === "product" && <>
                   <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
                   <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
@@ -1101,8 +1353,9 @@ export function EditBusinessForm({ business, onSubmit, open = false }: {
   );
 }
 
-export function BusinessForm({ onSubmit }: {
+export function BusinessForm({ onSubmit, defaultKind = "service" }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  defaultKind?: Business["kind"];
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   const { t } = useT();
@@ -1110,7 +1363,7 @@ export function BusinessForm({ onSubmit }: {
   return (
     <form className="stackForm" onSubmit={onSubmit}>
       <label>{t("form.name")}<input name="name" required maxLength={200} /></label>
-      <BusinessClassificationFields categories={choices} />
+      <BusinessClassificationFields categories={choices} defaultKind={defaultKind} />
       <label>{t("form.description")}<textarea name="description" rows={3} /></label>
       <label>{t("form.phone")}<input name="phone" inputMode="tel" /></label>
       <label>{t("form.whatsapp")}<input name="whatsapp" inputMode="tel" /></label>
@@ -1160,7 +1413,7 @@ function categoryFieldFormData(form: HTMLFormElement) {
   return data;
 }
 
-function CategoryManager({ run }: { run: AdminAction }) {
+export function CategoryManager({ run }: { run: AdminAction }) {
   const [categorySearch, setCategorySearch] = useState("");
   const [subcategorySearch, setSubcategorySearch] = useState("");
   const [newSubcategoryCategory, setNewSubcategoryCategory] = useState("");
@@ -1376,195 +1629,6 @@ function CategoryManager({ run }: { run: AdminAction }) {
   );
 }
 
-function SuperAdminPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
-  const queryClient = useQueryClient();
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
-  const enabled = Boolean(user?.is_superadmin);
-  const { data: dashboard } = useQuery({
-    queryKey: ["admin-dashboard"], queryFn: () => apiGet<Record<string, number>>("/admin/dashboard/"), enabled,
-  });
-  const { data: businesses = [] } = useQuery({
-    queryKey: ["admin-businesses"], queryFn: () => apiGet<Business[]>("/admin/businesses/"), enabled,
-  });
-  const { data: claims = [] } = useQuery({
-    queryKey: ["admin-claims"], queryFn: () => apiGet<{ id: string; business: string; user: string; proof_path: string }[]>("/admin/claims/"), enabled,
-  });
-  const { data: planRequests = [] } = useQuery({
-    queryKey: ["admin-plan-requests"], queryFn: () => apiGet<{ id: string; business: string; requested_plan: string }[]>("/admin/plan-requests/"), enabled,
-  });
-  const { data: plans = [] } = useQuery({
-    queryKey: ["admin-plans"], queryFn: () => apiGet<{ plan: string; monthly_price: number; active: boolean }[]>("/admin/plans/"), enabled,
-  });
-  const { data: payments = [] } = useQuery({
-    queryKey: ["admin-payments"], queryFn: () => apiGet<{ id: string; business: string; plan: string; amount_paise: number; status: string }[]>("/admin/payments/"), enabled,
-  });
-
-  async function run(action: () => Promise<unknown>, success: string) {
-    setError("");
-    setMessage("");
-    try {
-      await action();
-      setMessage(success);
-      await queryClient.invalidateQueries();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The request failed.");
-    }
-  }
-
-  async function createEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const name = String(form.get("name") ?? "");
-    await run(() => apiPost("/admin/businesses/", {
-      name,
-      slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`,
-      kind: form.get("kind"),
-      category_id: form.get("category_id") || undefined,
-      subcategory_id: form.get("subcategory_id") || undefined,
-      category_data: categoryDataFromForm(form),
-      description: form.get("description"),
-      phone: form.get("phone"),
-      whatsapp: form.get("whatsapp"),
-      address: form.get("address"),
-    }), "Field entry created. It is awaiting full verification.");
-    event.currentTarget.reset();
-  }
-
-  async function importEntries(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    await run(
-      () => apiUpload("/admin/businesses/import/", new FormData(form)),
-      "CSV import completed. Imported listings are hidden until verified.",
-    );
-    form.reset();
-  }
-
-  async function updatePlan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await run(() => apiPut("/admin/plans/", {
-      plan: form.get("plan"),
-      monthly_price: Number(form.get("monthly_price")),
-      active: form.get("active") === "on",
-    }), "Plan pricing updated.");
-  }
-
-  async function recordPayment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await run(() => apiPost("/admin/payments/", {
-      business_id: form.get("business_id"),
-      plan: form.get("plan"),
-      amount_paise: Math.round(Number(form.get("amount_rupees")) * 100),
-      gst_paise: Math.round(Number(form.get("gst_rupees") || 0) * 100),
-      method: form.get("method"),
-      gateway_ref: form.get("gateway_ref"),
-    }), "Payment recorded and access updated.");
-    event.currentTarget.reset();
-  }
-
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <PortalIntro eyebrow="Super admin" title="MySobo operations" copy="Manage the expandable service and product catalogue, verify listings and claims, enter field-agent listings, manage plans, and record payments." />
-      {!user ? (
-        <section className="section ownerGate"><h2>Admin sign-in required</h2><p>Log in with a super-admin account to access operations.</p><a className="button" href="/mysobo?dialog=login">Log in</a></section>
-      ) : !user.is_superadmin ? (
-        <section className="section ownerGate"><h2>Access restricted</h2><p>This portal is only available to users with the super-admin role.</p></section>
-      ) : (
-        <>
-          <section className="section metricGrid">
-            {Object.entries(dashboard ?? {}).map(([label, count]) => <article className="metricCard" key={label}><span>{label.replace(/_/g, " ")}</span><strong>{count}</strong></article>)}
-          </section>
-          <CategoryManager run={run} />
-          <section className="section portalGrid">
-                <article className="portalPanel"><p className="eyebrow">Verification queue</p><h2>Businesses awaiting review</h2>
-                  {businesses.filter((business) => !business.verified).map((business) => <div className="adminRow" key={business.id}><span><strong>{business.name}</strong><small>{business.source} · {business.phone}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "verify" }), "Business verified.")}>Verify</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost(`/admin/businesses/${business.id}/verify/`, { decision: "reject" }), "Listing hidden.")}>Reject</button></div></div>)}
-                  {!businesses.some((business) => !business.verified) && <p className="mutedText">No business listings awaiting verification.</p>}
-            </article>
-            <article className="portalPanel"><p className="eyebrow">Claims</p><h2>Owner claim requests</h2>
-              {claims.map((claim) => <div className="adminRow" key={claim.id}><span><strong>{claim.business}</strong><small>Requested by {claim.user}{claim.proof_path ? ` · ${claim.proof_path}` : ""}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost("/admin/claims/", { claim_id: claim.id, decision: "approved" }), "Claim approved.")}>Approve</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost("/admin/claims/", { claim_id: claim.id, decision: "rejected" }), "Claim rejected.")}>Reject</button></div></div>)}
-              {!claims.length && <p className="mutedText">No claims awaiting review.</p>}
-            </article>
-          </section>
-          <section className="section portalGrid">
-            <article className="portalPanel"><p className="eyebrow">Field-agent entry</p><h2>Add a business from the field</h2>
-              <form className="stackForm" onSubmit={createEntry}>
-                <label>Business name<input name="name" required /></label>
-                <BusinessClassificationFields categories={categoriesQuery.data ?? []} defaultKind="service" />
-                <label>Description<textarea name="description" rows={2} /></label>
-                <label>Phone<input name="phone" inputMode="tel" /></label>
-                <label>WhatsApp<input name="whatsapp" inputMode="tel" /></label>
-                <label>Address<input name="address" /></label>
-                <button className="button" type="submit">Save field entry</button>
-              </form>
-              <details className="csvImportDetails">
-                <summary>Import listings from CSV</summary>
-                <p className="mutedText">Upload up to 500 listings (5 MB). Every row is validated before import; invalid rows prevent the whole batch from being saved.</p>
-                <p className="csvColumns">Required: <code>name,kind,category_slug</code>. Optional: <code>slug,subcategory_slug,phone,whatsapp,address,description,category_data</code>.</p>
-                <form className="stackForm" onSubmit={importEntries}>
-                  <label>CSV file<input name="file" type="file" accept=".csv,text/csv" required /></label>
-                  <button className="smallButton" type="submit">Validate and import</button>
-                </form>
-              </details>
-            </article>
-            <article className="portalPanel"><p className="eyebrow">Plan requests</p><h2>Owner requests</h2>
-              {planRequests.map((item) => <div className="adminRow" key={item.id}><span><strong>{item.business}</strong><small>Requested {item.requested_plan}</small></span><div className="rowActions"><button className="smallButton" type="button" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "approve" }), "Plan request approved.")}>Approve</button><button className="smallButton dangerButton" type="button" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "reject" }), "Plan request rejected.")}>Reject</button></div></div>)}
-              {!planRequests.length && <p className="mutedText">No plan changes awaiting review.</p>}
-            </article>
-          </section>
-          <section className="section portalGrid">
-            <article className="portalPanel"><p className="eyebrow">Pricing controls</p><h2>Manage monthly plans</h2>
-              <form className="stackForm" onSubmit={updatePlan}>
-                <label>Plan<select name="plan" required>{plans.map((plan) => <option value={plan.plan} key={plan.plan}>{plan.plan}</option>)}</select></label>
-                <label>Monthly price (₹)<input name="monthly_price" type="number" min="0" required defaultValue={plans[0]?.monthly_price ?? 0} /></label>
-                <label className="checkLabel"><input name="active" type="checkbox" defaultChecked /> Available to owners</label>
-                <button className="button" type="submit">Save plan</button>
-              </form>
-              {plans.map((plan) => <p className="compactRow" key={plan.plan}>{plan.plan}: ₹{plan.monthly_price}/month · {plan.active ? "active" : "inactive"}</p>)}
-            </article>
-            <article className="portalPanel"><p className="eyebrow">Payment control</p><h2>Record payment and access</h2>
-              <form className="stackForm" onSubmit={recordPayment}>
-                <label>Business<select name="business_id" required><option value="">Choose business</option>{businesses.map((business) => <option value={business.id} key={business.id}>{business.name}</option>)}</select></label>
-                <label>Plan<select name="plan" required>{plans.map((plan) => <option value={plan.plan} key={plan.plan}>{plan.plan}</option>)}</select></label>
-                <label>Amount (₹)<input name="amount_rupees" type="number" min="0" step="0.01" required /></label>
-                <label>GST (₹)<input name="gst_rupees" type="number" min="0" step="0.01" defaultValue="0" /></label>
-                <label>Method<input name="method" required defaultValue="manual" /></label>
-                <label>Gateway reference<input name="gateway_ref" /></label>
-                <button className="button" type="submit">Record payment</button>
-              </form>
-              <h3>Recent payments</h3>
-              {payments.slice(0, 5).map((payment) => <p className="compactRow" key={payment.id}>{payment.business} · {payment.plan} · ₹{(payment.amount_paise / 100).toFixed(2)} · {payment.status}</p>)}
-            </article>
-          </section>
-        </>
-      )}
-      {error && <PortalFeedback error={error} notice="" />}
-      {message && <PortalFeedback error="" notice={message} />}
-    </Shell>
-  );
-}
-
-function BusinessDetailRoute({ user, onAuthChange }: {
-  user?: PortalUser;
-  onAuthChange: () => void;
-}) {
-  const { slug } = useParams();
-  const navigate = useNavigate();
-  if (!slug) return <Navigate to="/mysobo" replace />;
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <ListingDialog
-        slug={slug}
-        user={user}
-        onLogin={() => navigate("/mysobo?dialog=login")}
-      />
-    </Shell>
-  );
-}
-
 export default function App() {
   const [authVersion, setAuthVersion] = useState(0);
   const hasToken = Boolean(sessionStorage.getItem("mysobo-token"));
@@ -1579,12 +1643,13 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/mysobo" replace />} />
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
+      <Route path="/mysobo/saved" element={<SavedPage user={user} onAuthChange={authChanged} />} />
       <Route path="/mysobo/owner/*" element={<OwnerDashboard user={user} onAuthChange={authChanged} />} />
-      <Route path="/mysobo/superadmin" element={<SuperAdminPortal user={user} onAuthChange={authChanged} />} />
+      <Route path="/mysobo/superadmin/*" element={<SuperAdminDashboard user={user} onAuthChange={authChanged} />} />
       <Route path="/services/:categorySlug/*" element={<CategoryPage kind="service" user={user} onAuthChange={authChanged} />} />
       <Route path="/products/:categorySlug/*" element={<CategoryPage kind="product" user={user} onAuthChange={authChanged} />} />
       <Route path="/categories/:categorySlug/*" element={<CategoryPage kind="all" user={user} onAuthChange={authChanged} />} />
-      <Route path="/business/:slug" element={<BusinessDetailRoute user={user} onAuthChange={authChanged} />} />
+      <Route path="/business/:slug" element={<ListingPage user={user} onAuthChange={authChanged} />} />
       <Route path="*" element={<Navigate to="/mysobo" replace />} />
     </Routes>
   );

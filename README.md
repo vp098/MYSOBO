@@ -97,3 +97,45 @@ PostgreSQL RLS.
 
 GitHub Actions runs the frontend build and Django checks, migration check, and
 tests against PostgreSQL on pushes and pull requests to `main`.
+
+
+## Production database (Supabase)
+
+Use Supabase's **transaction pooler** so traffic spikes (for example a WhatsApp
+digest sent to thousands of residents) never run out of database connections:
+
+```
+DATABASE_URL=postgresql://postgres.<project>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres
+```
+
+Port `6543` is detected automatically: server-side cursors and prepared
+statements are turned off, which the pooler requires. Run **migrations** over
+the direct or session connection (port `5432`), because the pooler can cut long
+schema changes short.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `DB_CONN_MAX_AGE` | `60` | Seconds to reuse a connection; health checks drop dead ones. |
+| `DB_STATEMENT_TIMEOUT_MS` | `5000` | Each API request's queries are cancelled after this long. |
+| `DB_LOCK_TIMEOUT_MS` | `3000` | A request gives up waiting for a row lock after this long. |
+| `DB_TRANSACTION_POOLER` | `false` | Force pooler mode when not using port 6543. |
+
+Timeouts are set with transaction-local `set_config`, the same way as the
+row-level-security user context, so they never leak between requests through
+the pooler. Management commands and migrations are not limited.
+
+**Errors.** API errors always come back as JSON, `{"detail": "...", "code": "..."}`:
+`conflict` (409) for duplicates, `invalid` (400) for bad input, `timeout` or
+`unavailable` (503) for database trouble, `server_error` (500) otherwise.
+Details are logged on the server and never shown to users.
+
+**Duplicates.** The database itself allows only one pending listing request per
+person per business and one pending plan request per business. Payment
+references must be unique. Before running migration `0011` and billing `0003`
+on an existing database, check there are no duplicate pending rows.
+
+**Monitoring.** `GET /api/health/` returns `{"status": "ok", "database": "ok"}`
+(200) or 503. Point an uptime monitor at it.
+
+**History is kept.** Businesses are soft-deleted (`deleted_at`); payments and
+invoices are protected from deletion; reviews stay with their business.

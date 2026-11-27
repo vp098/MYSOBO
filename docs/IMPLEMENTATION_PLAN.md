@@ -96,25 +96,30 @@ add it to their phone's home screen; the icon always opens **`/mysobo`**.
 | Featured listings | Cards: category tag, Verified badge, name, description, rating (★ 4.9 (38)), price from | Exists — add rating + price line |
 | Category page | `/services/:slug`, `/products/:slug`: subcategory chips, filters, paginated results | Exists |
 | Business detail | `/business/:slug`: Call (green), WhatsApp (mint), Save, details, hours, photos, offers, reviews | Exists — add offers + hours |
-| Saved | Saved businesses list with count in top bar | Partly — add top-bar Saved chip |
+| Saved | `/mysobo/saved`, heart on every card (`GET /api/me/saved/`) | Built |
+| Phone layout | Bottom tabs (Explore · Categories · Saved · My business), photo cards with category covers, first-launch welcome + intro slides, full-screen sign-in | Built |
 | Login | Dialog with mobile OTP | Exists |
 
 ## 6. Dashboard 2 — Business owner portal (`/mysobo/owner`)
 
-Signed-out view: left side explains the benefits (Trusted local discovery,
-Products & services, Offers & plan upgrades) and the 5-step journey
-(Create account → Business type → Choose plan → Create listing → Photos & submit);
-right side has **Create account / Sign in** tabs. "Already listed? Claim an existing business."
+There is **no claiming and no "verified" badge** for owners or residents.
+A listing's states are **Live**, **Waiting for approval** and **Not sent**.
+After an owner adds a listing, a popup asks **"Send your listing for approval?"**;
+yes sends it to the super admin (`POST /api/owner/businesses/<id>/request-approval/`),
+and the admin's approval makes it live. Drafts can be sent later from My businesses.
 
-Signed-in sidebar: **Overview · My Businesses · Add Business · Claim Business ·
-Offers & Promotions · Plans & Billing · Profile & Settings · Help & Support · Log out**.
+Signed-out view: benefits, the 5-step journey (Sign in → Add business → Send for
+approval → MySobo approves → Live) and a mobile sign-in card.
+
+Sidebar groups: **Overview · Listings (My businesses, Add business) ·
+Grow (Offers & promotions, Plans & billing) · Account (Profile & settings, Help & support)**.
+On phones the sidebar becomes a bottom tab bar: Home · Listings · Add (+) · Offers · More.
 
 | Page | Contents | Backend |
 |---|---|---|
-| Overview | "Welcome back, {name}", KPI tiles (Total, Verified, Under review, Pending claims, Pending offers, Current plan), quick actions, listings with status badges, recent activity | Businesses, Claim, BusinessPost, Subscription — exists; needs an owner summary endpoint |
+| Overview | Welcome, "not live yet" nudge, KPI tiles (Total, Live, Waiting for approval, Not sent, Pending offers, Average rating), illustrated quick actions, listings, recent activity | Built |
 | My Businesses | Search + type + status filters, cards with plan badge, status, "Hidden from public search" flag, Edit / Manage | Exists |
 | Add Business | Step form: type, category & subcategory, details, contact, hours, photos | Exists (single form) — split into steps |
-| Claim Business | Search existing listing, submit claim with proof | Exists |
 | Offers & Promotions | Post an offer (business, title ≤200, details) + submitted offers with Pending / Approved / Rejected | Post exists; admin approval needed |
 | Plans & Billing | Free / Pro ₹499 / Premium ₹1,999 cards per business, current plan, request upgrade, request history | Exists |
 | Profile & Settings | Name, mobile, email, language | New (small) |
@@ -168,3 +173,10 @@ Pending counts show as marigold badges.
 - [ ] Admin can approve claims, verify listings, approve offers and plans, record payments, and see the audit log.
 - [ ] All screens work at 360px width.
 - [ ] `npm run build` and the backend test suite pass in CI.
+
+## 10. Sample data
+
+`python manage.py seed_dashboard_demo [--owner-mobile 98XXXXXXXX]` adds 16 sample
+South Bopal listings with reviews and offers (source `sample`, no phone numbers),
+and gives that mobile's account 4 sample owner listings (2 live, 1 waiting, 1 not sent).
+**Run `python manage.py seed_dashboard_demo --remove` before launch.**

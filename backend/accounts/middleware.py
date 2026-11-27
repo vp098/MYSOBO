@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import connection, transaction
 
 
@@ -12,9 +13,17 @@ class PostgreSQLRLSContextMiddleware:
         user_id = self._get_authenticated_user_id(request)
         with transaction.atomic():
             with connection.cursor() as cursor:
+                # All three settings are transaction-local, so they never leak
+                # to another request through the connection pooler.
                 cursor.execute(
-                    "SELECT set_config('mysobo.user_id', %s, true)",
-                    [str(user_id) if user_id else ""],
+                    "SELECT set_config('mysobo.user_id', %s, true), "
+                    "set_config('statement_timeout', %s, true), "
+                    "set_config('lock_timeout', %s, true)",
+                    [
+                        str(user_id) if user_id else "",
+                        str(getattr(settings, "DB_STATEMENT_TIMEOUT_MS", 5000)),
+                        str(getattr(settings, "DB_LOCK_TIMEOUT_MS", 3000)),
+                    ],
                 )
             return self.get_response(request)
 
