@@ -31,6 +31,7 @@ function Shell({
   onAuthChange: () => void;
 }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState("");
 
@@ -64,8 +65,8 @@ function Shell({
           <span className="brandMark">M</span><span>MySobo</span>
         </a>
         <nav>
-          <a href="/mysobo">Residents</a>
-          <a href="/mysobo/owner">For businesses</a>
+          <a href="/mysobo" aria-current={location.pathname === "/mysobo" ? "page" : undefined}>Residents</a>
+          <a href="/mysobo/owner" aria-current={location.pathname.startsWith("/mysobo/owner") ? "page" : undefined}>For businesses</a>
           {user?.is_superadmin && <a href="/mysobo/superadmin">Super admin</a>}
           {user ? (
             <button type="button" className="navButton" onClick={logout}>Log out</button>
@@ -951,13 +952,21 @@ function CategoryPage({ kind, user, onAuthChange }: {
   );
 }
 
+function statusClass(status: string) {
+  if (status === "approved" || status === "active") return "approved";
+  if (status === "rejected" || status === "cancelled") return "rejected";
+  return "pending";
+}
+
 function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
   const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
   const [selectedBusiness, setSelectedBusiness] = useState("");
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const { data: owned = [], isLoading } = useQuery({
+  const [pendingKey, setPendingKey] = useState("");
+  const { data: owned = [], isLoading, isError: listingsError, refetch: refetchListings } = useQuery({
     queryKey: ["owner-businesses"],
     queryFn: () => apiGet<Business[]>("/owner/businesses/"),
     enabled: Boolean(user),
@@ -967,24 +976,38 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
     queryFn: () => apiGet<{ plans: { plan: string; monthly_price: number }[]; subscriptions: { id: string; business_id: string; plan: string; status: string; expires_on: string | null }[]; requests: { business_id: string; requested_plan: string; status: string }[] }>("/owner/plans/"),
     enabled: Boolean(user),
   });
-  const { data: claims = [] } = useQuery({
+  const { data: claims = [], isLoading: claimsLoading } = useQuery({
     queryKey: ["owner-claims"],
     queryFn: () => apiGet<{ id: string; business: string; status: string; note: string }[]>("/owner/claims/"),
     enabled: Boolean(user),
   });
-  const { data: posts = [] } = useQuery({
+  const { data: posts = [], isLoading: postsLoading } = useQuery({
     queryKey: ["owner-posts"],
     queryFn: () => apiGet<{ id: string; business: string; title: string; body: string; status: string }[]>("/owner/posts/"),
     enabled: Boolean(user),
   });
-  const { data: matches } = useQuery({
-    queryKey: ["owner-search", search],
-    queryFn: () => apiGet<Business[]>(`/owner/claimable/?q=${encodeURIComponent(search)}`),
-    enabled: Boolean(user && search.trim().length >= 2),
+  const claimSearch = search.trim();
+  const { data: matches, isFetching: claimsSearching, isError: claimSearchError } = useQuery({
+    queryKey: ["owner-search", claimSearch],
+    queryFn: () => apiGet<Business[]>(`/owner/claimable/?q=${encodeURIComponent(claimSearch)}`),
+    enabled: Boolean(user && claimSearch.length >= 2),
   });
   const matchingBusinesses = matches ?? [];
+  const activeBusiness = owned.find((business) => business.id === selectedBusiness);
 
-  async function perform(action: () => Promise<unknown>, success: string) {
+  useEffect(() => {
+    if (!selectedBusiness && owned[0]) setSelectedBusiness(owned[0].id);
+  }, [owned, selectedBusiness]);
+
+  function openLogin() {
+    const next = new URLSearchParams(params);
+    next.set("dialog", "login");
+    setParams(next);
+  }
+
+  async function perform(action: () => Promise<unknown>, success: string, key: string) {
+    if (pendingKey) return;
+    setPendingKey(key);
     setError("");
     setNotice("");
     try {
@@ -993,6 +1016,8 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
       await queryClient.invalidateQueries();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The request failed.");
+    } finally {
+      setPendingKey("");
     }
   }
 
@@ -1007,7 +1032,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
       category_id: form.get("category_id") || undefined,
       subcategory_id: form.get("subcategory_id") || undefined,
       category_data: categoryDataFromForm(form),
-    }), "Your listing was created and is awaiting verification.");
+    }), "Your listing was created and is awaiting verification.", "create");
     event.currentTarget.reset();
   }
 
@@ -1016,7 +1041,7 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
     const form = new FormData(event.currentTarget);
     await perform(() => apiPost("/owner/posts/", {
       business_id: form.get("business_id"), title: form.get("title"), body: form.get("body"),
-    }), "Offer sent for review.");
+    }), "Offer sent for review.", "offer");
     event.currentTarget.reset();
   }
 
@@ -1025,28 +1050,84 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
     const form = new FormData(event.currentTarget);
     await perform(() => apiPost("/owner/plans/", {
       business_id: form.get("business_id"), plan: form.get("plan"),
-    }), "Plan request submitted for approval.");
+    }), "Plan request submitted for approval.", "plan");
   }
 
   return (
     <Shell user={user} onAuthChange={onAuthChange}>
+      <div className="ownerPortal">
       <PortalIntro eyebrow="Business owner portal" title="Manage your local presence" copy="Claim your existing listing or create one, post offers, track review status and request a plan." />
+      {user && (
+        <nav className="section ownerJump" aria-label="Owner portal sections">
+          <a href="#owner-listings">Listings</a>
+          <a href="#owner-claim">Claim</a>
+          <a href="#owner-create">Create</a>
+          <a href="#owner-offers">Offers</a>
+          <a href="#owner-plans">Plans</a>
+        </nav>
+      )}
+      {(error || notice) && (
+        <div className="section portalNotices">
+          {error && <p className="formError" role="alert">{error}</p>}
+          {notice && <p className="successMessage" role="status">{notice}</p>}
+        </div>
+      )}
       {!user ? (
-        <section className="section ownerGate"><h2>Sign in to continue</h2><p>Use your MySobo account to manage your business listing.</p><a className="button" href="/mysobo?dialog=login">Log in</a></section>
+        <section className="section ownerGate" aria-labelledby="owner-signin-title">
+          <p className="eyebrow">Account required</p>
+          <h2 id="owner-signin-title">Sign in to continue</h2>
+          <p>Use your MySobo account to manage your business listing. After you sign in, you stay on this page.</p>
+          <ul className="gatePoints">
+            <li>Claim a listing that is already in the directory</li>
+            <li>Add a business and update its public details</li>
+            <li>Post offers and request a plan once the listing is yours</li>
+          </ul>
+          <button className="button" type="button" onClick={openLogin}>Log in</button>
+        </section>
       ) : (
         <>
           <section className="section portalGrid">
-            <article className="portalPanel">
+            <article className="portalPanel" id="owner-listings">
               <p className="eyebrow">Your listings</p><h2>Business status</h2>
-              {isLoading ? <p>Loading your listings…</p> : owned.length ? owned.map((business) => (
-                <button className={`ownerBusinessRow ${selectedBusiness === business.id ? "selected" : ""}`} type="button" key={business.id} onClick={() => setSelectedBusiness(business.id)}>
-                  <span><strong>{business.name}</strong><small>{business.category?.name ?? "Uncategorized"} · {business.plan} plan</small></span>
-                  <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? "Verified" : "Under review"}</span>
-                </button>
-              )) : <p className="mutedText">No claimed listings yet.</p>}
-              {owned.find((business) => business.id === selectedBusiness) && (
+              <p className="panelLead">Select a listing to review its status and edit the details residents will see.</p>
+              {isLoading ? (
+                <div className="portalSkeleton" aria-busy="true" aria-live="polite">
+                  <span /><span /><span />
+                  <p>Loading your listings…</p>
+                </div>
+              ) : listingsError ? (
+                <div className="portalEmpty" role="alert">
+                  <p>Could not load your listings.</p>
+                  <button className="smallButton" type="button" onClick={() => void refetchListings()}>Try again</button>
+                </div>
+              ) : owned.length ? (
+                <ul className="ownerList">
+                  {owned.map((business) => (
+                    <li key={business.id}>
+                    <button
+                      className={`ownerBusinessRow ${selectedBusiness === business.id ? "selected" : ""}`}
+                      type="button"
+                      aria-pressed={selectedBusiness === business.id}
+                      aria-controls="owner-editor"
+                      onClick={() => setSelectedBusiness(business.id)}
+                    >
+                      <span className="ownerAvatar" aria-hidden="true">{business.name.charAt(0).toUpperCase()}</span>
+                      <span className="ownerCopy"><strong>{business.name}</strong><small>{business.category?.name ?? "Uncategorized"} · {business.plan ?? "free"} plan</small></span>
+                      <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? "Verified" : "Under review"}</span>
+                    </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="portalEmpty">
+                  <p>No claimed listings yet.</p>
+                  <p className="mutedText">Search for an existing business, or create a listing below.</p>
+                </div>
+              )}
+              {activeBusiness && (
                 <EditBusinessForm
-                  business={owned.find((business) => business.id === selectedBusiness)!}
+                  business={activeBusiness}
+                  pending={pendingKey === "edit"}
                   onSubmit={(event) => {
                     event.preventDefault();
                     const form = new FormData(event.currentTarget);
@@ -1060,61 +1141,160 @@ function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: 
                       phone: form.get("phone"),
                       whatsapp: form.get("whatsapp"),
                       address: form.get("address"),
-                    }), "Listing details updated.");
+                    }), "Listing details updated.", "edit");
                   }}
                 />
               )}
             </article>
-            <article className="portalPanel">
+            <article className="portalPanel" id="owner-claim">
               <p className="eyebrow">Claim a business</p><h2>Find your existing listing</h2>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by business name" />
-              {matchingBusinesses.slice(0, 5).map((business) => (
-                <div className="claimRow" key={business.id}>
-                  <span>{business.name}</span>
-                  <button type="button" className="smallButton" onClick={() => perform(
-                    () => apiPost("/owner/claims/", { business_id: business.id }),
-                    "Claim submitted. We will update its status after verification.",
-                  )}>Claim</button>
-                </div>
-              ))}
-              {claims.map((claim) => <p className="compactRow" key={claim.id}>{claim.business} · <span className={`statusPill ${claim.status === "approved" ? "approved" : "pending"}`}>{claim.status}</span>{claim.note && ` · ${claim.note}`}</p>)}
-              <p className="mutedText">Claims are reviewed before owner access is granted.</p>
+              <p className="panelLead">Search the directory, then request ownership. Claims are reviewed before owner access is granted.</p>
+              <label className="taxonomySearch" htmlFor="claim-search">Business name
+                <input
+                  id="claim-search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by business name"
+                  aria-describedby="claim-search-hint"
+                  autoComplete="off"
+                />
+              </label>
+              <p id="claim-search-hint" className="fieldHint" aria-live="polite">
+                {claimSearch.length < 2
+                  ? "Type at least 2 characters to search listings you can claim."
+                  : claimsSearching
+                    ? "Searching…"
+                    : claimSearchError
+                      ? "Could not search listings. Try again in a moment."
+                      : matchingBusinesses.length
+                        ? `${matchingBusinesses.length} listing${matchingBusinesses.length === 1 ? "" : "s"} found.`
+                        : "No matching listings. Try another name, or create one below."}
+              </p>
+              <div className="claimResults">
+                {matchingBusinesses.slice(0, 5).map((business) => (
+                  <div className="claimRow" key={business.id}>
+                    <span><strong>{business.name}</strong><small>{business.category?.name ?? business.address ?? "South Bopal"}</small></span>
+                    <button
+                      type="button"
+                      className="smallButton"
+                      disabled={Boolean(pendingKey)}
+                      onClick={() => perform(
+                        () => apiPost("/owner/claims/", { business_id: business.id }),
+                        "Claim submitted. We will update its status after verification.",
+                        `claim-${business.id}`,
+                      )}
+                    >{pendingKey === `claim-${business.id}` ? "Submitting…" : "Claim"}</button>
+                  </div>
+                ))}
+              </div>
+              {matchingBusinesses.length > 5 && <p className="fieldHint">Showing the first 5 matches. Refine the name to narrow the list.</p>}
+              <h3>Your claims</h3>
+              {claimsLoading ? <p className="mutedText">Loading claims…</p> : claims.length ? claims.map((claim) => (
+                <p className="compactRow" key={claim.id}>
+                  <span>{claim.business}{claim.note ? ` · ${claim.note}` : ""}</span>
+                  <span className={`statusPill ${statusClass(claim.status)}`}>{claim.status}</span>
+                </p>
+              )) : <p className="mutedText">You have not submitted a claim yet.</p>}
             </article>
           </section>
           <section className="section portalGrid">
-            <article className="portalPanel">
+            <article className="portalPanel" id="owner-create">
               <p className="eyebrow">Create listing</p><h2>Add your business</h2>
-              <BusinessForm onSubmit={createBusiness} />
+              <p className="panelLead">New listings stay hidden until MySobo verifies them. You can still edit the details while they are under review.</p>
+              <BusinessForm onSubmit={createBusiness} pending={pendingKey === "create"} />
             </article>
-            <article className="portalPanel">
+            <article className="portalPanel" id="owner-offers">
               <p className="eyebrow">Offers and updates</p><h2>Post an offer</h2>
-              {owned.length ? <form className="stackForm" onSubmit={submitPost}>
-                <label>Business<select name="business_id" required defaultValue={selectedBusiness}><option value="">Choose listing</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-                <label>Offer title<input name="title" required maxLength={200} /></label>
-                <label>Details<textarea name="body" required rows={3} /></label>
-                <button className="button" type="submit">Submit offer</button>
-              </form> : <p className="mutedText">Claim or create a listing to post offers.</p>}
-              {posts.map((post) => <p className="compactRow" key={post.id}>{post.title} <span className="statusPill pending">{post.status}</span></p>)}
+              {owned.length ? <form className="stackForm" onSubmit={submitPost} aria-busy={pendingKey === "offer"}>
+                <label>Business
+                  <select name="business_id" required value={selectedBusiness} onChange={(event) => setSelectedBusiness(event.target.value)}>
+                    <option value="">Choose listing</option>
+                    {owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+                  </select>
+                </label>
+                <label>Offer title<input name="title" required maxLength={200} placeholder="Weekend checkup, festive hours…" /></label>
+                <label>Details<textarea name="body" required rows={3} placeholder="What should residents know?" /></label>
+                <button className="button" type="submit" disabled={Boolean(pendingKey)}>{pendingKey === "offer" ? "Submitting…" : "Submit offer"}</button>
+              </form> : (
+                <div className="portalEmpty">
+                  <p>Claim or create a listing to post offers.</p>
+                </div>
+              )}
+              <h3>Submitted offers</h3>
+              {postsLoading ? <p className="mutedText">Loading offers…</p> : posts.length ? posts.map((post) => (
+                <p className="compactRow" key={post.id}><span>{post.title}</span><span className={`statusPill ${statusClass(post.status)}`}>{post.status}</span></p>
+              )) : <p className="mutedText">No offers submitted yet.</p>}
             </article>
           </section>
           <section className="section portalGrid">
-            <article className="portalPanel">
+            <article className="portalPanel" id="owner-plans">
               <p className="eyebrow">Plans</p><h2>Choose a plan</h2>
-              {owned.length ? <form className="stackForm" onSubmit={submitPlan}>
-                <label>Business<select name="business_id" required><option value="">Choose listing</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name} ({item.plan})</option>)}</select></label>
-                <label>Plan<select name="plan" required>{(plans?.plans ?? []).map((plan) => <option value={plan.plan} key={plan.plan}>{plan.plan} — ₹{plan.monthly_price}/month</option>)}</select></label>
-                <button className="button" type="submit">Request plan change</button>
-              </form> : <p className="mutedText">Add or claim a listing before selecting a plan.</p>}
-              {plans?.requests.map((item, index) => <p className="compactRow" key={`${item.business_id}-${index}`}>{item.requested_plan} plan request · {item.status}</p>)}
+              {owned.length ? <form className="stackForm" onSubmit={submitPlan} aria-busy={pendingKey === "plan"}>
+                <label>Business
+                  <select name="business_id" required defaultValue={selectedBusiness}>
+                    <option value="">Choose listing</option>
+                    {owned.map((item) => <option value={item.id} key={item.id}>{item.name} ({item.plan ?? "free"})</option>)}
+                  </select>
+                </label>
+                <fieldset className="planChoices">
+                  <legend>Plan</legend>
+                  {(plans?.plans ?? []).length ? (plans?.plans ?? []).map((plan, index) => (
+                    <label className="planChoice" key={plan.plan}>
+                      <input type="radio" name="plan" value={plan.plan} required defaultChecked={index === 0} />
+                      <span><strong>{plan.plan}</strong><small>₹{plan.monthly_price}/month</small></span>
+                    </label>
+                  )) : <p className="mutedText">Plans are not available yet.</p>}
+                </fieldset>
+                <button className="button" type="submit" disabled={Boolean(pendingKey) || !(plans?.plans ?? []).length}>{pendingKey === "plan" ? "Requesting…" : "Request plan change"}</button>
+              </form> : (
+                <div className="portalEmpty">
+                  <p>Add or claim a listing before selecting a plan.</p>
+                </div>
+              )}
+              {(plans?.subscriptions?.length ?? 0) > 0 && (
+                <>
+                  <h3>Current access</h3>
+                  {plans?.subscriptions.map((item) => (
+                    <p className="compactRow" key={item.id}>
+                      <span>{item.plan}{item.expires_on ? ` · until ${item.expires_on}` : ""}</span>
+                      <span className={`statusPill ${statusClass(item.status)}`}>{item.status}</span>
+                    </p>
+                  ))}
+                </>
+              )}
+              {(plans?.requests.length ?? 0) > 0 && <h3>Plan requests</h3>}
+              {plans?.requests.map((item, index) => (
+                <p className="compactRow" key={`${item.business_id}-${index}`}>
+                  <span>{item.requested_plan} plan request</span>
+                  <span className={`statusPill ${statusClass(item.status)}`}>{item.status}</span>
+                </p>
+              ))}
             </article>
-            <article className="portalPanel">
-              <p className="eyebrow">How it works</p><h2>Verified, not just listed</h2>
+            <article className="portalPanel" id="owner-how">
+              <p className="eyebrow">How it works</p>
+              <h2>Verified, not just listed</h2>
               <p className="mutedText">New listings and offers remain under review until MySobo verifies them. Your listing status and current plan appear here.</p>
+              <ol className="ownerSteps">
+                <li><span>1</span><div><strong>Claim or create</strong><p>Find the listing residents already see, or add your business.</p></div></li>
+                <li><span>2</span><div><strong>Wait for review</strong><p>Under review means the listing is hidden. Verified means it can appear in search.</p></div></li>
+                <li><span>3</span><div><strong>Offer and upgrade</strong><p>Post an update for residents, then request a paid plan if you need one.</p></div></li>
+              </ol>
             </article>
           </section>
         </>
       )}
-      <PortalFeedback error={error} notice={notice} />
+      {!user && (
+        <section className="section portalPanel ownerHowSignedOut" id="owner-how">
+          <p className="eyebrow">How it works</p>
+          <h2>Verified, not just listed</h2>
+          <ol className="ownerSteps">
+            <li><span>1</span><div><strong>Sign in</strong><p>Use the same mobile number or account you use as a resident.</p></div></li>
+            <li><span>2</span><div><strong>Claim or create</strong><p>Request an existing listing, or add one that is not in the directory yet.</p></div></li>
+            <li><span>3</span><div><strong>Go live after review</strong><p>MySobo checks the details before residents can find the listing.</p></div></li>
+          </ol>
+        </section>
+      )}
+      </div>
     </Shell>
   );
 }
@@ -1227,16 +1407,17 @@ function BusinessClassificationFields({
   );
 }
 
-function EditBusinessForm({ business, onSubmit }: {
+function EditBusinessForm({ business, onSubmit, pending = false }: {
   business: Business;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pending?: boolean;
 }) {
   const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   return (
-    <details className="editDetails">
+    <details className="editDetails" id="owner-editor" open>
       <summary>Edit listing details</summary>
-      <form className="stackForm" onSubmit={onSubmit}>
-        <label>Business name<input name="name" required defaultValue={business.name} /></label>
+      <form className="stackForm" onSubmit={onSubmit} aria-busy={pending}>
+        <label>Business name<input name="name" required defaultValue={business.name} disabled={pending} /></label>
         <BusinessClassificationFields
           key={business.id}
           categories={categories ?? []}
@@ -1248,27 +1429,28 @@ function EditBusinessForm({ business, onSubmit }: {
         <label>Description<textarea name="description" rows={3} defaultValue={business.description} /></label>
         <label>Phone<input name="phone" defaultValue={business.phone} /></label>
         <label>WhatsApp<input name="whatsapp" defaultValue={business.whatsapp} /></label>
-        <label>Address<input name="address" defaultValue={business.address ?? ""} /></label>
-        <button className="button" type="submit">Save changes</button>
+        <label>Address<input name="address" defaultValue={business.address ?? ""} disabled={pending} /></label>
+        <button className="button" type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</button>
       </form>
     </details>
   );
 }
 
-function BusinessForm({ onSubmit }: {
+function BusinessForm({ onSubmit, pending = false }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  pending?: boolean;
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   const choices = data ?? [];
   return (
-    <form className="stackForm" onSubmit={onSubmit}>
+    <form className="stackForm" onSubmit={onSubmit} aria-busy={pending}>
       <label>Business name<input name="name" required maxLength={200} /></label>
       <BusinessClassificationFields categories={choices} />
       <label>Description<textarea name="description" rows={3} /></label>
       <label>Phone<input name="phone" inputMode="tel" /></label>
       <label>WhatsApp<input name="whatsapp" inputMode="tel" /></label>
-      <label>Address<input name="address" /></label>
-      <button className="button" type="submit">Create listing</button>
+      <label>Address<input name="address" disabled={pending} /></label>
+      <button className="button" type="submit" disabled={pending}>{pending ? "Creating listing…" : "Create listing"}</button>
     </form>
   );
 }
