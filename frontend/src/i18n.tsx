@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /*
  * MySobo translations. Gujarati is the default language.
@@ -25,6 +25,11 @@ const messages = {
   "nav.logout": ["Log out", "લૉગ આઉટ", "लॉग आउट"],
   "nav.home": ["MySobo home", "MySobo હોમ", "MySobo होम"],
   "lang.label": ["Language", "ભાષા", "भाषा"],
+  "install.button": ["Install app", "એપ ઇન્સ્ટોલ કરો", "ऐप इंस्टॉल करें"],
+  "install.iosTitle": ["Add MySobo to your Home Screen", "MySobo ને હોમ સ્ક્રીન પર ઉમેરો", "MySobo को होम स्क्रीन पर जोड़ें"],
+  "install.iosStep1": ["Tap the Share button at the bottom of Safari.", "Safari ની નીચે શેર બટન દબાવો.", "Safari में नीचे शेयर बटन दबाएँ।"],
+  "install.iosStep2": ["Choose “Add to Home Screen”.", "“Add to Home Screen” પસંદ કરો.", "“Add to Home Screen” चुनें।"],
+  "install.iosStep3": ["Tap Add. MySobo opens straight to your local directory.", "Add દબાવો. MySobo સીધું તમારી સ્થાનિક ડિરેક્ટરી ખોલશે.", "Add दबाएँ। MySobo सीधे आपकी स्थानीय डायरेक्टरी खोलेगा।"],
   "close": ["Close", "બંધ કરો", "बंद करें"],
   "verified": ["Verified", "ચકાસાયેલ", "सत्यापित"],
   "tryAgain": ["Try again", "ફરી પ્રયાસ કરો", "फिर कोशिश करें"],
@@ -324,21 +329,71 @@ export function useT() {
 
 export function LanguageSwitch() {
   const { lang, setLang, t } = useT();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const current = LANGUAGES.find((item) => item.code === lang) ?? LANGUAGES[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="langSwitch" role="group" aria-label={t("lang.label")}>
-      {LANGUAGES.map((item) => (
-        <button
-          key={item.code}
-          type="button"
-          lang={item.code}
-          aria-label={item.label}
-          aria-pressed={lang === item.code}
-          className={lang === item.code ? "active" : ""}
-          onClick={() => setLang(item.code)}
-        >
-          {item.short}
-        </button>
-      ))}
+    <div className="langMenu" ref={wrapRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="langButton"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${t("lang.label")}: ${current.label}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+        </svg>
+        <span lang={current.code}>{current.short}</span>
+      </button>
+      {open && (
+        <div className="langList" role="menu" aria-label={t("lang.label")}>
+          {LANGUAGES.map((item) => (
+            <button
+              key={item.code}
+              type="button"
+              role="menuitemradio"
+              aria-checked={lang === item.code}
+              lang={item.code}
+              className={lang === item.code ? "active" : ""}
+              onClick={() => {
+                setLang(item.code);
+                setOpen(false);
+                buttonRef.current?.focus();
+              }}
+            >
+              <span>{item.label}</span>
+              {lang === item.code && (
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
   type Subcategory,
 } from "./services/api";
 import { LanguageSwitch, useT } from "./i18n";
+import { InstallButton } from "./pwa";
 
 function Shell({
   children,
@@ -69,6 +70,7 @@ function Shell({
           <a href="/mysobo">{t("nav.residents")}</a>
           <a href="/mysobo/owner">{t("nav.business")}</a>
           {user?.is_superadmin && <a href="/mysobo/superadmin">{t("nav.superadmin")}</a>}
+          <InstallButton />
           <LanguageSwitch />
           {user ? (
             <button type="button" className="navButton" onClick={logout}>{t("nav.logout")}</button>
