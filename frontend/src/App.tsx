@@ -28,6 +28,8 @@ import { SuperAdminDashboard } from "./superadmin";
 import { coverFor, coverForCategory } from "./covers";
 import { ListingPage } from "./listing";
 import { Onboarding, shouldOnboard } from "./onboarding";
+import { NeighbourhoodHub, fadeUp, stagger } from "./hub";
+import { motion, useReducedMotion } from "framer-motion";
 import { DEMO_LOGIN_ENABLED, EmailSignIn, GoogleSignIn, SMS_OTP_ENABLED } from "./google";
 
 export function Shell({
@@ -371,6 +373,7 @@ function BusinessCards({ businesses }: { businesses: Business[] }) {
   const [params, setParams] = useSearchParams();
   const { signedIn, saved } = useSavedSet();
   const { t } = useT();
+  const reduceMotion = useReducedMotion();
   if (!businesses.length) {
     return <div className="emptyState"><h2>{t("cards.noneTitle")}</h2><p>{t("cards.noneText")}</p></div>;
   }
@@ -405,12 +408,12 @@ function BusinessCards({ businesses }: { businesses: Business[] }) {
   }
 
   return (
-    <div className="bizGrid">
+    <motion.div className="bizGrid" initial={reduceMotion ? false : "hidden"} whileInView="show" viewport={{ once: true, amount: 0.05 }} variants={stagger}>
       {businesses.map((business) => {
         const isSaved = saved.has(business.id);
         const kindLabel = t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service");
         return (
-          <article className="bizCard" key={business.id}>
+          <motion.article className="bizCard" key={business.id} variants={fadeUp} whileHover={reduceMotion ? undefined : { y: -2 }}>
             <button className="bizOpen" type="button" aria-label={t("cards.open", { name: business.name })} onClick={() => navigate(`/business/${encodeURIComponent(business.slug)}`)}>
               <span className="bizCover">
                 <img src={coverFor(business)} alt="" loading="lazy" />
@@ -446,10 +449,10 @@ function BusinessCards({ businesses }: { businesses: Business[] }) {
             >
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
             </button>
-          </article>
+          </motion.article>
         );
       })}
-    </div>
+    </motion.div>
   );
 }
 
@@ -676,6 +679,7 @@ function ListingDialog({ slug, user, onLogin }: { slug: string; user?: PortalUse
 }
 
 function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
+  const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const resultsRef = useRef<HTMLElement>(null);
@@ -842,16 +846,21 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
         </ul>
       </section>
 
+      <NeighbourhoodHub />
+
       <section className="section categorySection" id="categories">
         <div className="sectionTitle">
           <div><h2>{t("rs.browse")}</h2><p className="mutedText sectionSub">{t("rs.browseSub")}</p></div>
           {selectedCategory && <button className="textLink resetFilter" type="button" onClick={() => setFilter("category", "")}>{t("home.clearCategory")}</button>}
         </div>
-        <div className="catGrid">
+        <motion.div className="catGrid" initial={reduceMotion ? false : "hidden"} whileInView="show" viewport={{ once: true, amount: 0.15 }} variants={stagger}>
           {(allCategoriesOpen ? visibleCategories : visibleCategories.slice(0, 6)).map((category) => {
             const on = selectedCategory === category.slug;
             return (
-              <button
+              <motion.button
+                variants={fadeUp}
+                whileHover={reduceMotion ? undefined : { y: -3 }}
+                whileTap={{ scale: 0.98 }}
                 className={`catCard ${on ? "on" : ""}`}
                 type="button"
                 aria-pressed={on}
@@ -863,10 +872,10 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
                   <span className="catTop"><strong>{category.name}</strong><em>{t("rs.active", { n: category.listing_count })}</em></span>
                   {CAT_BLURBS.includes(category.slug) && <span className="catBlurb">{t(`catd.${category.slug}` as MessageKey)}</span>}
                 </span>
-              </button>
+              </motion.button>
             );
           })}
-        </div>
+        </motion.div>
         {!allCategoriesOpen && visibleCategories.length > 6 && (
           <button type="button" className="smallButton seeAllCategories" onClick={() => setAllCategoriesOpen(true)}>{t("home.seeAllCats", { n: visibleCategories.length })}</button>
         )}
