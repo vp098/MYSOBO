@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from directory.photo_views import OwnerPhotoDetailView, OwnerPhotoOrderView, OwnerPhotoRoleView, OwnerPhotosView
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
@@ -67,6 +68,10 @@ urlpatterns = [
     path("api/admin/settings/", AdminSettingsView.as_view(), name="admin-settings"),
     path("api/owner/stats/", OwnerStatsView.as_view(), name="owner-stats"),
     path("api/owner/businesses/<uuid:business_id>/hours/", OwnerHoursView.as_view(), name="owner-hours"),
+    path("api/owner/businesses/<uuid:business_id>/photos/", OwnerPhotosView.as_view(), name="owner-photos"),
+    path("api/owner/businesses/<uuid:business_id>/photos/order/", OwnerPhotoOrderView.as_view(), name="owner-photo-order"),
+    path("api/owner/businesses/<uuid:business_id>/photos/<uuid:photo_id>/", OwnerPhotoDetailView.as_view(), name="owner-photo"),
+    path("api/owner/businesses/<uuid:business_id>/photos/<uuid:photo_id>/role/", OwnerPhotoRoleView.as_view(), name="owner-photo-role"),
     path("api/owner/invoices/", OwnerInvoicesView.as_view(), name="owner-invoices"),
     path("api/me/preferences/", PreferencesView.as_view(), name="me-preferences"),
     path("api/", include("directory.urls")),

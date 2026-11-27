@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
+import { Lightbox } from "./photos";
 import { SearchX } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -55,6 +56,7 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
   const [params, setParams] = useSearchParams();
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(0);
+  const [viewer, setViewer] = useState<number | null>(null);
   const signedIn = Boolean(user);
   const locale = lang === "gu" ? "gu-IN" : lang === "hi" ? "hi-IN" : "en-IN";
 
@@ -153,6 +155,7 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
   const openNow = Boolean(todayHours && !todayHours.closed && todayHours.opens && todayHours.closes && todayHours.opens.slice(0, 5) <= now && now < todayHours.closes.slice(0, 5));
   const catalog = business?.kind === "product" ? rows(products) : [...rows(services), ...rows(products)];
   const alreadyReviewed = reviews.some((review) => review.mine);
+  const gallery = business?.photos ?? [];
   const kindLabel = business ? t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service") : "";
 
   return (
@@ -170,7 +173,12 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
           <div className="lpEmpty"><IconBadge icon={SearchX} /><h1>{t("listing.unavailable")}</h1><Link className="obBtn" to="/mysobo">{t("nav.explore")}</Link></div>
         ) : (
           <>
-            <div className="lpCover"><img src={coverFor(business)} alt="" /></div>
+            <div className={`lpCover ${business.logo ? "hasLogo" : ""}`}>
+              <button type="button" className="lpCoverBtn" disabled={!gallery.length} onClick={() => setViewer(Math.max(0, gallery.indexOf(business.cover_image ?? "")))} aria-label={t("lp.photos")}>
+                <img src={coverFor(business)} alt="" />
+              </button>
+              {business.logo && <img className="lpLogo" src={business.logo} alt={`${business.name} logo`} />}
+            </div>
             <header className="lpHead">
               {business.category && <span className="lpChip">{business.category.name}</span>}
               <h1>{business.name}{business.verified && <span className="vBadge">✓ {t("vf.verified")}</span>}</h1>
@@ -211,6 +219,25 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
                 </>
               ) : <p className="lpHint">{t("lp.noPhone")}</p>}
             </section>
+
+            {gallery.length > 0 && (
+              <section className="lpSection">
+                <h2>{t("lp.photos")}</h2>
+                <ul className="lpGallery">
+                  {gallery.slice(0, 6).map((url, index) => (
+                    <li key={url}>
+                      <button type="button" onClick={() => setViewer(index)} aria-label={t("ph.previewN", { n: index + 1 })}>
+                        <img src={url} alt="" loading="lazy" />
+                        {index === 5 && gallery.length > 6 && <span className="lpGalleryMore">{t("lp.seeAll", { n: gallery.length })}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {viewer !== null && gallery[viewer] && (
+              <Lightbox urls={gallery} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} />
+            )}
 
             {offers.length > 0 && (
               <section className="lpSection">

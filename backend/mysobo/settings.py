@@ -482,6 +482,7 @@ REST_FRAMEWORK = {
         "business_contact_event": "60/min",
         "google_login": "20/min",
         "demo_login": "20/min",
+        "photo_upload": "60/hour",
     },
 }
 

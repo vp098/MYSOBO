@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
+import { PhotoLibrary } from "./photos";
 import { BadgeCheck, Store } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -31,6 +32,7 @@ const GROUPS: { label?: MessageKey; items: Section[] }[] = [
   { label: "od.group.listings", items: [
     { path: "businesses", key: "od.nav.businesses", icon: "store" },
     { path: "add", key: "od.nav.add", icon: "plus" },
+    { path: "photos", key: "ph.nav", icon: "image" },
     { path: "verify", key: "vf.nav", icon: "shield" },
   ] },
   { label: "od.group.grow", items: [
@@ -71,6 +73,7 @@ const ICONS: Record<string, ReactNode> = {
   more: <><circle cx="6" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="18" cy="12" r="1.4" fill="currentColor" /></>,
   note: <><path d="M5 4.5h14v11l-4 4H5z" /><path d="M15 19.5v-4h4M8.5 9h7M8.5 12.5h5" /></>,
   rupee: <><path d="M7 5h10M7 9h10M9 5c4 0 6 1.6 6 4s-2 4-6 4H8l7 6" /></>,
+  image: <><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="m20.5 16-5-5-8.5 8.5" /></>,
   phone: <><path d="M6.6 3.5h2.6l1.4 4-2 1.3a12 12 0 0 0 6.6 6.6l1.3-2 4 1.4v2.6a2 2 0 0 1-2.2 2A17 17 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" /></>,
 };
 
@@ -186,12 +189,12 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
       <Link to={to("offers")} className={active.path === "offers" ? "active" : ""} aria-current={active.path === "offers" ? "page" : undefined} onClick={clear}>
         <Icon name="tag" size={22} /><span>{t("od.tab.offers")}</span>
       </Link>
-      <button type="button" className={["plans", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
+      <button type="button" className={["photos", "plans", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
         <Icon name="more" size={22} /><span>{t("od.tab.more")}</span>
       </button>
       {moreOpen && (
         <div className="odSheet" role="menu">
-          {(["plans", "profile", "help"] as const).map((path) => {
+          {(["photos", "plans", "profile", "help"] as const).map((path) => {
             const item = SECTIONS.find((entry) => entry.path === path)!;
             return <Link role="menuitem" key={path} to={to(path)} onClick={clear}><Icon name={item.icon} />{t(item.key)}</Link>;
           })}
@@ -251,6 +254,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           {active.path === "" && <Overview user={user} {...data} />}
           {active.path === "businesses" && <MyBusinesses {...data} />}
           {active.path === "add" && <AddBusiness {...data} />}
+          {active.path === "photos" && <PhotoLibrary owned={owned} />}
           {active.path === "verify" && <VerifyListing />}
           {active.path === "offers" && <Offers {...data} />}
           {active.path === "plans" && <Plans {...data} />}

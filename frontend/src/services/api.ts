@@ -201,3 +201,39 @@ export type Review = {
   created_at: string;
   mine?: boolean;
 };
+
+/** Multipart upload that reports progress (fetch cannot report upload progress). */
+export function apiUploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress: (fraction: number) => void,
+  method: "POST" | "PUT" = "POST",
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${API_BASE}/${path.replace(/^\/+/, "")}`);
+    const token = sessionStorage.getItem("mysobo-token");
+    if (token) xhr.setRequestHeader("Authorization", `Token ${token}`);
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(event.loaded / event.total); };
+    xhr.onload = () => {
+      let body: unknown = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as T);
+      else reject(new Error((body as { detail?: string } | null)?.detail ?? `Upload failed: ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("Network error. Check your connection and try again."));
+    xhr.send(formData);
+  });
+}
+
+export type BusinessPhoto = {
+  id: string;
+  url: string;
+  sort: number;
+  is_cover: boolean;
+  is_logo: boolean;
+  size: number | null;
+  created_at: string;
+};
+
+export type PhotoLibrary = { photos: BusinessPhoto[]; limit: number; plan: string; errors?: string[] };

@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
+from django.utils import timezone
 from django.core.validators import FileExtensionValidator
 
 from accounts.models import Society
@@ -265,6 +266,11 @@ class BusinessPhoto(models.Model):
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="photos")
     path = models.ImageField(upload_to="business-photos/")
     sort = models.IntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ("sort", "created_at")
+        indexes = [models.Index(fields=["business", "sort"], name="photo_business_sort_idx")]
 
 
 class BusinessPost(models.Model):

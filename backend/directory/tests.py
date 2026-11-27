@@ -952,3 +952,114 @@ class ResilienceTests(TestCase):
             Claim.objects.create(business=business, user=user)
         Claim.objects.filter(user=user).update(status="rejected")
         Claim.objects.create(business=business, user=user)  # allowed again after a decision
+
+
+import shutil
+import tempfile
+
+from django.test import override_settings
+
+from .models import BusinessPhoto
+
+_PHOTO_MEDIA = tempfile.mkdtemp(prefix="mysobo-photos-")
+
+
+def _image_file(name="shop.jpg", fmt="JPEG", size=(64, 48), exif_gps=False):
+    from PIL import Image
+    buffer = io.BytesIO()
+    image = Image.new("RGB", size, (40, 122, 75))
+    kwargs = {}
+    if exif_gps:
+        exif = Image.Exif()
+        exif[0x8825] = {1: "N", 2: (23.0, 1.0, 0.0)}  # GPS info
+        kwargs["exif"] = exif
+    image.save(buffer, fmt, **kwargs)
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type=f"image/{fmt.lower()}")
+
+
+@override_settings(MEDIA_ROOT=_PHOTO_MEDIA)
+class OwnerPhotoTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(_PHOTO_MEDIA, ignore_errors=True)
+
+    def setUp(self):
+        self.owner = User.objects.create_user(username="photo-owner", password="x")
+        self.other = User.objects.create_user(username="photo-other", password="x")
+        self.business = Business.objects.create(name="Photo Shop", slug="photo-shop", kind="service", source="owner", plan="pro")
+        BusinessMember.objects.create(user=self.owner, business=self.business, role="owner")
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+        self.base = f"/api/owner/businesses/{self.business.id}/photos/"
+
+    def upload(self, *files):
+        return self.client.post(self.base, {"files": list(files)}, format="multipart")
+
+    def test_upload_several_sets_first_as_cover_and_shows_publicly(self):
+        response = self.upload(_image_file("a.jpg"), _image_file("b.png", "PNG"), _image_file("c.webp", "WEBP"))
+        self.assertEqual(response.status_code, 201, response.content)
+        photos = response.json()["photos"]
+        self.assertEqual(len(photos), 3)
+        self.assertTrue(photos[0]["is_cover"])
+        self.assertEqual(response.json()["limit"], 20)
+        public = APIClient().get(f"/api/businesses/{self.business.slug}/").json()
+        self.assertEqual(len(public["photos"]), 3)
+        self.assertTrue(public["cover_image"])
+
+    def test_gps_exif_is_removed_and_large_images_are_shrunk(self):
+        from PIL import Image
+        self.upload(_image_file("big.jpg", size=(3000, 1500), exif_gps=True))
+        photo = BusinessPhoto.objects.get(business=self.business)
+        with Image.open(photo.path.path) as saved:
+            self.assertEqual(max(saved.size), 2000)
+            self.assertNotIn(0x8825, saved.getexif())
+
+    def test_rejects_wrong_type_fake_images_and_strangers(self):
+        bad = self.upload(SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf"))
+        self.assertEqual(bad.status_code, 400)
+        fake = self.upload(SimpleUploadedFile("fake.jpg", b"not really an image", content_type="image/jpeg"))
+        self.assertEqual(fake.status_code, 400)
+        self.assertIn("not a readable image", fake.json()["detail"])
+        stranger = APIClient()
+        stranger.force_authenticate(self.other)
+        self.assertEqual(stranger.get(self.base).status_code, 404)
+        self.assertEqual(stranger.post(self.base, {"files": [_image_file()]}, format="multipart").status_code, 404)
+        self.assertEqual(APIClient().get(self.base).status_code, 401)
+
+    def test_free_plan_limit(self):
+        self.business.plan = "free"
+        self.business.save()
+        response = self.upload(*[_image_file(f"{i}.jpg") for i in range(5)])
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()["photos"]), 3)
+        self.assertTrue(response.json()["errors"])
+        self.assertEqual(self.upload(_image_file()).status_code, 400)
+
+    def test_roles_reorder_replace_and_delete(self):
+        photos = self.upload(_image_file("a.jpg"), _image_file("b.jpg"), _image_file("c.jpg")).json()["photos"]
+        a, b, c = (p["id"] for p in photos)
+        logo = self.client.post(f"{self.base}{b}/role/", {"as": "logo"}, format="json").json()["photos"]
+        self.assertTrue(next(p for p in logo if p["id"] == b)["is_logo"])
+        cover = self.client.post(f"{self.base}{c}/role/", {"as": "cover"}, format="json").json()["photos"]
+        self.assertTrue(next(p for p in cover if p["id"] == c)["is_cover"])
+
+        ordered = self.client.put(f"{self.base}order/", {"ids": [c, a, b]}, format="json").json()["photos"]
+        self.assertEqual([p["id"] for p in ordered], [c, a, b])
+        self.assertEqual(self.client.put(f"{self.base}order/", {"ids": [c, a]}, format="json").status_code, 409)
+
+        old_name = BusinessPhoto.objects.get(id=c).path.name
+        replaced = self.client.put(f"{self.base}{c}/", {"file": _image_file("new.png", "PNG")}, format="multipart")
+        self.assertEqual(replaced.status_code, 200)
+        self.business.refresh_from_db()
+        new_name = BusinessPhoto.objects.get(id=c).path.name
+        self.assertNotEqual(old_name, new_name)
+        self.assertEqual(self.business.cover_image.name, new_name)
+
+        after = self.client.delete(f"{self.base}{c}/").json()["photos"]
+        self.assertEqual(len(after), 2)
+        self.business.refresh_from_db()
+        self.assertEqual(self.business.cover_image.name, BusinessPhoto.objects.get(id=a).path.name)
+        self.client.delete(f"{self.base}{b}/")
+        self.business.refresh_from_db()
+        self.assertFalse(self.business.logo)
