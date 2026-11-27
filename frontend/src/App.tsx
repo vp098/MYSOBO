@@ -22,8 +22,9 @@ import {
 } from "./services/api";
 import { LanguageSwitch, useT } from "./i18n";
 import { InstallButton } from "./pwa";
+import { OwnerDashboard } from "./owner";
 
-function Shell({
+export function Shell({
   children,
   user,
   onAuthChange,
@@ -961,176 +962,7 @@ function CategoryPage({ kind, user, onAuthChange }: {
   );
 }
 
-function OwnerPortal({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
-  const queryClient = useQueryClient();
-  const [selectedBusiness, setSelectedBusiness] = useState("");
-  const [search, setSearch] = useState("");
-  const { t } = useT();
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const { data: owned = [], isLoading } = useQuery({
-    queryKey: ["owner-businesses"],
-    queryFn: () => apiGet<Business[]>("/owner/businesses/"),
-    enabled: Boolean(user),
-  });
-  const { data: plans } = useQuery({
-    queryKey: ["owner-plans"],
-    queryFn: () => apiGet<{ plans: { plan: string; monthly_price: number }[]; subscriptions: { id: string; business_id: string; plan: string; status: string; expires_on: string | null }[]; requests: { business_id: string; requested_plan: string; status: string }[] }>("/owner/plans/"),
-    enabled: Boolean(user),
-  });
-  const { data: claims = [] } = useQuery({
-    queryKey: ["owner-claims"],
-    queryFn: () => apiGet<{ id: string; business: string; status: string; note: string }[]>("/owner/claims/"),
-    enabled: Boolean(user),
-  });
-  const { data: posts = [] } = useQuery({
-    queryKey: ["owner-posts"],
-    queryFn: () => apiGet<{ id: string; business: string; title: string; body: string; status: string }[]>("/owner/posts/"),
-    enabled: Boolean(user),
-  });
-  const { data: matches } = useQuery({
-    queryKey: ["owner-search", search],
-    queryFn: () => apiGet<Business[]>(`/owner/claimable/?q=${encodeURIComponent(search)}`),
-    enabled: Boolean(user && search.trim().length >= 2),
-  });
-  const matchingBusinesses = matches ?? [];
-
-  async function perform(action: () => Promise<unknown>, success: string) {
-    setError("");
-    setNotice("");
-    try {
-      await action();
-      setNotice(success);
-      await queryClient.invalidateQueries();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("err.request"));
-    }
-  }
-
-  async function createBusiness(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const name = String(form.get("name") ?? "");
-    const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
-    await perform(() => apiPost("/businesses/", {
-      name, slug, kind: form.get("kind"), description: form.get("description"),
-      phone: form.get("phone"), whatsapp: form.get("whatsapp"), address: form.get("address"),
-      category_id: form.get("category_id") || undefined,
-      subcategory_id: form.get("subcategory_id") || undefined,
-      category_data: categoryDataFromForm(form),
-    }), t("owner.created"));
-    event.currentTarget.reset();
-  }
-
-  async function submitPost(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await perform(() => apiPost("/owner/posts/", {
-      business_id: form.get("business_id"), title: form.get("title"), body: form.get("body"),
-    }), t("owner.offerSent"));
-    event.currentTarget.reset();
-  }
-
-  async function submitPlan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await perform(() => apiPost("/owner/plans/", {
-      business_id: form.get("business_id"), plan: form.get("plan"),
-    }), t("owner.planSubmitted"));
-  }
-
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <PortalIntro eyebrow={t("owner.eyebrow")} title={t("owner.title")} copy={t("owner.copy")} />
-      {!user ? (
-        <section className="section ownerGate"><h2>{t("owner.signInTitle")}</h2><p>{t("owner.signInText")}</p><a className="button" href="/mysobo?dialog=login">{t("nav.login")}</a></section>
-      ) : (
-        <>
-          <section className="section portalGrid">
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.yourListings")}</p><h2>{t("owner.status")}</h2>
-              {isLoading ? <p>{t("owner.loading")}</p> : owned.length ? owned.map((business) => (
-                <button className={`ownerBusinessRow ${selectedBusiness === business.id ? "selected" : ""}`} type="button" key={business.id} onClick={() => setSelectedBusiness(business.id)}>
-                  <span><strong>{business.name}</strong><small>{business.category?.name ?? t("owner.uncategorized")} · {t("owner.planName", { plan: business.plan ?? "" })}</small></span>
-                  <span className={`statusPill ${business.verified ? "approved" : "pending"}`}>{business.verified ? t("verified") : t("owner.underReview")}</span>
-                </button>
-              )) : <p className="mutedText">{t("owner.noClaimed")}</p>}
-              {owned.find((business) => business.id === selectedBusiness) && (
-                <EditBusinessForm
-                  business={owned.find((business) => business.id === selectedBusiness)!}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const form = new FormData(event.currentTarget);
-                    void perform(() => apiPatch(`/businesses/${selectedBusiness}/`, {
-                      name: form.get("name"),
-                      category_id: form.get("category_id") || undefined,
-                      subcategory_id: form.get("subcategory_id") || undefined,
-                      kind: form.get("kind"),
-                      description: form.get("description"),
-                      category_data: categoryDataFromForm(form),
-                      phone: form.get("phone"),
-                      whatsapp: form.get("whatsapp"),
-                      address: form.get("address"),
-                    }), t("owner.updated"));
-                  }}
-                />
-              )}
-            </article>
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.claimEyebrow")}</p><h2>{t("owner.findExisting")}</h2>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("owner.searchName")} />
-              {matchingBusinesses.slice(0, 5).map((business) => (
-                <div className="claimRow" key={business.id}>
-                  <span>{business.name}</span>
-                  <button type="button" className="smallButton" onClick={() => perform(
-                    () => apiPost("/owner/claims/", { business_id: business.id }),
-                    t("owner.claimSubmitted"),
-                  )}>{t("owner.claim")}</button>
-                </div>
-              ))}
-              {claims.map((claim) => <p className="compactRow" key={claim.id}>{claim.business} · <span className={`statusPill ${claim.status === "approved" ? "approved" : "pending"}`}>{claim.status}</span>{claim.note && ` · ${claim.note}`}</p>)}
-              <p className="mutedText">{t("owner.claimsReviewed")}</p>
-            </article>
-          </section>
-          <section className="section portalGrid">
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.createEyebrow")}</p><h2>{t("owner.addBusiness")}</h2>
-              <BusinessForm onSubmit={createBusiness} />
-            </article>
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.offersEyebrow")}</p><h2>{t("owner.postOffer")}</h2>
-              {owned.length ? <form className="stackForm" onSubmit={submitPost}>
-                <label>{t("owner.business")}<select name="business_id" required defaultValue={selectedBusiness}><option value="">{t("owner.chooseListing")}</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-                <label>{t("owner.offerTitle")}<input name="title" required maxLength={200} /></label>
-                <label>{t("owner.details")}<textarea name="body" required rows={3} /></label>
-                <button className="button" type="submit">{t("owner.submitOffer")}</button>
-              </form> : <p className="mutedText">{t("owner.claimToPost")}</p>}
-              {posts.map((post) => <p className="compactRow" key={post.id}>{post.title} <span className="statusPill pending">{post.status}</span></p>)}
-            </article>
-          </section>
-          <section className="section portalGrid">
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.plansEyebrow")}</p><h2>{t("owner.choosePlan")}</h2>
-              {owned.length ? <form className="stackForm" onSubmit={submitPlan}>
-                <label>{t("owner.business")}<select name="business_id" required><option value="">{t("owner.chooseListing")}</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name} ({item.plan})</option>)}</select></label>
-                <label>{t("owner.plan")}<select name="plan" required>{(plans?.plans ?? []).map((plan) => <option value={plan.plan} key={plan.plan}>{t("owner.perMonth", { plan: plan.plan, price: plan.monthly_price })}</option>)}</select></label>
-                <button className="button" type="submit">{t("owner.requestPlan")}</button>
-              </form> : <p className="mutedText">{t("owner.addBeforePlan")}</p>}
-              {plans?.requests.map((item, index) => <p className="compactRow" key={`${item.business_id}-${index}`}>{t("owner.planRequest", { plan: item.requested_plan, status: item.status })}</p>)}
-            </article>
-            <article className="portalPanel">
-              <p className="eyebrow">{t("owner.howEyebrow")}</p><h2>{t("owner.verifiedTitle")}</h2>
-              <p className="mutedText">{t("owner.howText")}</p>
-            </article>
-          </section>
-        </>
-      )}
-      <PortalFeedback error={error} notice={notice} />
-    </Shell>
-  );
-}
-
-function categoryDataFromForm(form: FormData) {
+export function categoryDataFromForm(form: FormData) {
   const data: Record<string, string | number | boolean> = {};
   const keys = [...form.keys()].filter((key) =>
     key.startsWith("category_field_") && !key.startsWith("category_field_type_")
@@ -1239,14 +1071,15 @@ function BusinessClassificationFields({
   );
 }
 
-function EditBusinessForm({ business, onSubmit }: {
+export function EditBusinessForm({ business, onSubmit, open = false }: {
   business: Business;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  open?: boolean;
 }) {
   const { t } = useT();
   const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   return (
-    <details className="editDetails">
+    <details className="editDetails" open={open || undefined}>
       <summary>{t("form.edit")}</summary>
       <form className="stackForm" onSubmit={onSubmit}>
         <label>{t("form.name")}<input name="name" required defaultValue={business.name} /></label>
@@ -1268,7 +1101,7 @@ function EditBusinessForm({ business, onSubmit }: {
   );
 }
 
-function BusinessForm({ onSubmit }: {
+export function BusinessForm({ onSubmit }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
@@ -1746,7 +1579,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/mysobo" replace />} />
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
-      <Route path="/mysobo/owner" element={<OwnerPortal user={user} onAuthChange={authChanged} />} />
+      <Route path="/mysobo/owner/*" element={<OwnerDashboard user={user} onAuthChange={authChanged} />} />
       <Route path="/mysobo/superadmin" element={<SuperAdminPortal user={user} onAuthChange={authChanged} />} />
       <Route path="/services/:categorySlug/*" element={<CategoryPage kind="service" user={user} onAuthChange={authChanged} />} />
       <Route path="/products/:categorySlug/*" element={<CategoryPage kind="product" user={user} onAuthChange={authChanged} />} />
