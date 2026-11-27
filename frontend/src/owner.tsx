@@ -1,4 +1,6 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { IconBadge } from "./iconBadge";
+import { BadgeCheck, Store } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { apiGet, apiPatch, apiPost, apiPut, type Business, type PortalUser } from "./services/api";
@@ -229,7 +231,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           ))}
           <div className="odSideBottom">
             <div className="odSideCard">
-              <img src="/mascot/mithu.png" alt="" width="44" height="44" />
+              <IconBadge icon={BadgeCheck} size={44} />
               <p className="odRowTitle">{t("cd.promoTitle")}</p>
               <p>{t("od.sideTip")}</p>
               <Link to={to("help")}>{t("cd.promoLink")} <Icon name="arrow" size={14} /></Link>
@@ -646,7 +648,7 @@ function VerifyListing() {
 function Empty({ text, to, cta }: { text: string; to: string; cta: string }) {
   return (
     <div className="odEmpty">
-      <img src="/mascot/mithu.png" alt="" width="72" height="72" />
+      <IconBadge icon={Store} size={64} />
       <p>{text}</p>
       <Link className="odBtn" to={`/mysobo/owner/${to}`}>{cta}</Link>
     </div>

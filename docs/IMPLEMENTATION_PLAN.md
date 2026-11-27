@@ -84,7 +84,7 @@ add it to their phone's home screen; the icon always opens **`/mysobo`**.
 - Cards: white on Paper, 1px `#DCEBDF` border, 16–20px radius, soft green shadow.
 - KPI tiles: label, big number, short helper line, small tinted icon.
 - Badges: Verified (mint), Pending (haldi), Rejected (error), Pro (indigo), Premium (green 20).
-- Every list has an empty state (with a mascot) and a loading state.
+- Every list has an empty state (with a Lucide icon) and a loading state.
 - Mobile first: everything must work at 360px width.
 
 ## 5. Dashboard 1 — Resident app (`/mysobo`)
@@ -160,7 +160,7 @@ Pending counts show as marigold badges.
 | 4 – 7 Dec | Owner portal: dashboard layout, sidebar, Overview KPIs, My Businesses, Plans, Offers |
 | 8 – 10 Dec | Super admin: dashboard layout, sidebar, Overview KPIs, queues, offers approval, reports, audit log |
 | 11 – 12 Dec | Owner and admin pages left over; admin strings into Gujarati/Hindi |
-| 13 – 14 Dec | Polish: mascots in empty states, 360px mobile pass, contrast check |
+| 13 – 14 Dec | Polish: icons in empty states, 360px mobile pass, contrast check |
 | 15 Dec | Safety: OTP rate limits, permissions, error tracking, backups |
 | 16 Dec | Buffer and feature freeze |
 

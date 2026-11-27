@@ -1,4 +1,6 @@
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { IconBadge } from "./iconBadge";
+import { SearchX } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -165,7 +167,7 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
         </div>
 
         {isLoading ? <p className="lpMuted">{t("listing.loading")}</p> : isError || !business ? (
-          <div className="lpEmpty"><img src="/mascot/mithu.png" alt="" width="80" height="80" /><h1>{t("listing.unavailable")}</h1><Link className="obBtn" to="/mysobo">{t("nav.explore")}</Link></div>
+          <div className="lpEmpty"><IconBadge icon={SearchX} /><h1>{t("listing.unavailable")}</h1><Link className="obBtn" to="/mysobo">{t("nav.explore")}</Link></div>
         ) : (
           <>
             <div className="lpCover"><img src={coverFor(business)} alt="" /></div>

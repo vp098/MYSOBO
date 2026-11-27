@@ -1,4 +1,6 @@
 import { LeafMark, Logo, PinScene } from "./logo";
+import { IconBadge } from "./iconBadge";
+import { Heart, LockKeyhole } from "lucide-react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -472,10 +474,10 @@ function SavedPage({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
         <h1>{t("saved.title")}</h1>
         <p className="mutedText">{t("saved.copy")}</p>
         {!signedIn ? (
-          <div className="emptyState"><img src="/mascot/mithu.png" alt="" width="80" height="80" /><p>{t("saved.signIn")}</p><Link className="button" to="/mysobo/saved?dialog=login">{t("nav.login")}</Link></div>
+          <div className="emptyState"><IconBadge icon={LockKeyhole} /><p>{t("saved.signIn")}</p><Link className="button" to="/mysobo/saved?dialog=login">{t("nav.login")}</Link></div>
         ) : isLoading ? <p className="emptyState">{t("home.finding")}</p>
           : data.length ? <BusinessCards businesses={data} />
-            : <div className="emptyState"><img src="/mascot/mithu.png" alt="" width="80" height="80" /><p>{t("saved.empty")}</p><Link className="button" to="/mysobo">{t("nav.explore")}</Link></div>}
+            : <div className="emptyState"><IconBadge icon={Heart} /><p>{t("saved.empty")}</p><Link className="button" to="/mysobo">{t("nav.explore")}</Link></div>}
       </section>
     </Shell>
   );
