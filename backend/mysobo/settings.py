@@ -347,10 +347,71 @@ STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STORAGES = {
-    "default": {
+supabase_storage_values = {
+    "url": env("SUPABASE_URL"),
+    "bucket": env("SUPABASE_STORAGE_BUCKET"),
+    "region": env("SUPABASE_STORAGE_REGION"),
+    "access_key": env("SUPABASE_S3_ACCESS_KEY_ID"),
+    "secret_key": env("SUPABASE_S3_SECRET_ACCESS_KEY"),
+}
+supabase_storage_configured = any(supabase_storage_values.values())
+supabase_storage_missing = [
+    name for name, value in supabase_storage_values.items() if not value
+]
+
+if supabase_storage_configured or (not DEBUG and not IS_CI):
+    if supabase_storage_missing:
+        raise ImproperlyConfigured(
+            "Supabase media storage is missing required settings: "
+            + ", ".join(supabase_storage_missing)
+        )
+
+    supabase_url = urlparse(supabase_storage_values["url"])
+    if (
+        supabase_url.scheme != "https"
+        or not supabase_url.hostname
+        or not supabase_url.hostname.endswith(".supabase.co")
+        or supabase_url.path not in ("", "/")
+        or supabase_url.query
+        or supabase_url.fragment
+    ):
+        raise ImproperlyConfigured(
+            "SUPABASE_URL must be an HTTPS Supabase project URL."
+        )
+
+    supabase_project_ref = supabase_url.hostname.removesuffix(".supabase.co")
+    if not supabase_project_ref:
+        raise ImproperlyConfigured(
+            "SUPABASE_URL must include a Supabase project reference."
+        )
+
+    supabase_bucket = supabase_storage_values["bucket"]
+    supabase_public_domain = (
+        f"{supabase_url.hostname}/storage/v1/object/public/{supabase_bucket}"
+    )
+    default_storage = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": supabase_bucket,
+            "endpoint_url": (
+                f"https://{supabase_project_ref}.storage.supabase.co/storage/v1/s3"
+            ),
+            "region_name": supabase_storage_values["region"],
+            "access_key": supabase_storage_values["access_key"],
+            "secret_key": supabase_storage_values["secret_key"],
+            "addressing_style": "path",
+            "custom_domain": supabase_public_domain,
+            "querystring_auth": False,
+            "file_overwrite": False,
+        },
+    }
+else:
+    default_storage = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
+    }
+
+STORAGES = {
+    "default": default_storage,
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },

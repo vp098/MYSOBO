@@ -41,6 +41,7 @@ from visible, non-deleted listings in the configured database.
 - React.js + TypeScript
 - Django REST Framework
 - PostgreSQL (configured with `DATABASE_URL` or the individual `DB_*` values)
+- Supabase Storage for persistent production media files
 
 ## Local setup
 
@@ -70,6 +71,19 @@ frontend and backend deploy separately, set the frontend Vercel project's
 `CORS_ALLOWED_ORIGINS` to the frontend's HTTPS origin. Redeploy the frontend
 after changing `VITE_API_URL`, since Vite embeds it in the production bundle.
 Never commit `.env` files, API keys, or database credentials.
+
+Uploaded images and other media use local disk during development. Production
+requires a Supabase Storage bucket and the `SUPABASE_URL`,
+`SUPABASE_STORAGE_BUCKET`, `SUPABASE_STORAGE_REGION`,
+`SUPABASE_S3_ACCESS_KEY_ID`, and `SUPABASE_S3_SECRET_ACCESS_KEY` environment
+variables. Get the S3 endpoint region and server-side access keys from the
+Supabase Storage S3 settings; keep the secret key only in the backend
+environment. The bucket must be public because directory images are served to
+unauthenticated visitors. Supabase PostgreSQL stores the file path, not the
+image bytes. Vercel's local filesystem is ephemeral, so configure these
+variables in the backend Vercel project before deploying. Existing images
+previously stored on Vercel's filesystem are not copied automatically; upload
+them again after the storage configuration is deployed.
 
 The PostgreSQL migration installs `pg_trgm`, `unaccent`, and `pgcrypto`, adds
 trigram GIN indexes for business name and description search, and retains the

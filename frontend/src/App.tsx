@@ -43,6 +43,7 @@ export function Shell({
   bottomNav?: ReactNode | null;
 }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState("");
   const { t } = useT();
@@ -77,8 +78,8 @@ export function Shell({
           <Logo size={30} />
         </a>
         <nav>
-          <a className="topLink" href="/mysobo">{t("nav.residents")}</a>
-          <a className="topLink" href="/mysobo/owner">{t("nav.business")}</a>
+          <a className="topLink" href="/mysobo" aria-current={location.pathname === "/mysobo" ? "page" : undefined}>{t("nav.residents")}</a>
+          <a className="topLink" href="/mysobo/owner" aria-current={location.pathname.startsWith("/mysobo/owner") ? "page" : undefined}>{t("nav.business")}</a>
           {user?.is_superadmin && <a href="/mysobo/superadmin">{t("nav.superadmin")}</a>}
           <InstallButton />
           <LanguageSwitch />
@@ -1323,17 +1324,18 @@ function BusinessClassificationFields({
   );
 }
 
-export function EditBusinessForm({ business, onSubmit, open = false }: {
+export function EditBusinessForm({ business, onSubmit, open = false, pending = false }: {
   business: Business;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   open?: boolean;
+  pending?: boolean;
 }) {
   const { t } = useT();
   const { data: categories } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   return (
     <details className="editDetails" open={open || undefined}>
       <summary>{t("form.edit")}</summary>
-      <form className="stackForm" onSubmit={onSubmit}>
+      <form className="stackForm" onSubmit={onSubmit} aria-busy={pending}>
         <label>{t("form.name")}<input name="name" required defaultValue={business.name} /></label>
         <BusinessClassificationFields
           key={business.id}
@@ -1347,28 +1349,29 @@ export function EditBusinessForm({ business, onSubmit, open = false }: {
         <label>{t("form.phone")}<input name="phone" defaultValue={business.phone} /></label>
         <label>{t("form.whatsapp")}<input name="whatsapp" defaultValue={business.whatsapp} /></label>
         <label>{t("form.address")}<input name="address" defaultValue={business.address ?? ""} /></label>
-        <button className="button" type="submit">{t("form.save")}</button>
+        <button className="button" type="submit" disabled={pending}>{t("form.save")}</button>
       </form>
     </details>
   );
 }
 
-export function BusinessForm({ onSubmit, defaultKind = "service" }: {
+export function BusinessForm({ onSubmit, defaultKind = "service", pending = false }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   defaultKind?: Business["kind"];
+  pending?: boolean;
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   const { t } = useT();
   const choices = data ?? [];
   return (
-    <form className="stackForm" onSubmit={onSubmit}>
+    <form className="stackForm" onSubmit={onSubmit} aria-busy={pending}>
       <label>{t("form.name")}<input name="name" required maxLength={200} /></label>
       <BusinessClassificationFields categories={choices} defaultKind={defaultKind} />
       <label>{t("form.description")}<textarea name="description" rows={3} /></label>
       <label>{t("form.phone")}<input name="phone" inputMode="tel" /></label>
       <label>{t("form.whatsapp")}<input name="whatsapp" inputMode="tel" /></label>
       <label>{t("form.address")}<input name="address" /></label>
-      <button className="button" type="submit">{t("form.create")}</button>
+      <button className="button" type="submit" disabled={pending}>{t("form.create")}</button>
     </form>
   );
 }
