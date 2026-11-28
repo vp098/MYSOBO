@@ -863,8 +863,9 @@ class OwnerToolsTests(TestCase):
 
     def test_preferences_and_invoices(self):
         self.client.force_authenticate(self.owner)
-        self.assertEqual(self.client.get("/api/me/preferences/").json(), {"whatsapp_alerts": True})
-        self.assertEqual(self.client.patch("/api/me/preferences/", {"whatsapp_alerts": False}, format="json").json(), {"whatsapp_alerts": False})
+        self.assertEqual(self.client.get("/api/me/preferences/").json()["whatsapp_alerts"], True)
+        self.assertEqual(self.client.patch("/api/me/preferences/", {"whatsapp_alerts": False}, format="json").json()["whatsapp_alerts"], False)
+        self.assertEqual(self.client.patch("/api/me/preferences/", {"theme": "neon"}, format="json").status_code, 400)
         self.assertEqual(self.client.patch("/api/me/preferences/", {"whatsapp_alerts": "no"}, format="json").status_code, 400)
         self.assertEqual(self.client.get("/api/owner/invoices/").json(), [])
         admin = User.objects.create_user(username="inv-admin", password="x")

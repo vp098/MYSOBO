@@ -1,3 +1,5 @@
+import { useScrollMainToTop } from "./dashboard";
+import { ThemePicker } from "./theme";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
 import { PhotoLibrary } from "./photos";
@@ -12,7 +14,7 @@ import { coverFor } from "./covers";
 import { LeafMark, PinScene } from "./logo";
 
 /*
- * Business owner dashboard at /mysobo/owner/*.
+ * Business owner dashboard at /sobo/business-owner/*.
  * Desktop: grouped sidebar. Phones: bottom tab bar with a "More" sheet.
  * A listing goes live after the owner sends it for approval and the
  * MySobo team approves it. Colours come from the palette tokens in styles.css.
@@ -48,6 +50,7 @@ const GROUPS: { label?: MessageKey; items: Section[] }[] = [
 const SECTIONS = GROUPS.flatMap((group) => group.items);
 
 const ICONS: Record<string, ReactNode> = {
+  heart: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />,
   grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
   store: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /><path d="M5.5 12v7.5h13V12M10 19.5v-4h4v4" /></>,
   plus: <><circle cx="12" cy="12" r="8.5" /><path d="M12 8v8M8 12h8" /></>,
@@ -78,7 +81,7 @@ const ICONS: Record<string, ReactNode> = {
   phone: <><path d="M6.6 3.5h2.6l1.4 4-2 1.3a12 12 0 0 0 6.6 6.6l1.3-2 4 1.4v2.6a2 2 0 0 1-2.2 2A17 17 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" /></>,
 };
 
-function Icon({ name, size = 20 }: { name: string; size?: number }) {
+export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       {ICONS[name]}
@@ -152,7 +155,8 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
   const { data: plans } = useQuery({ queryKey: ["owner-plans"], queryFn: () => apiGet<OwnerPlans>("/owner/plans/"), enabled });
   const { data: posts = [] } = useQuery({ queryKey: ["owner-posts"], queryFn: () => apiGet<OwnerPost[]>("/owner/posts/"), enabled });
 
-  useEffect(() => { setMoreOpen(false); window.scrollTo({ top: 0 }); }, [section]);
+  useEffect(() => { setMoreOpen(false); }, [section]);
+  useScrollMainToTop(section);
 
   const perform: Perform = async (action, success) => {
     setError("");
@@ -174,7 +178,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
 
   const data: DashData = { owned, plans, posts, isLoading, perform, askApproval: setApprovalFor };
   const active = SECTIONS.find((item) => item.path === section) ?? SECTIONS[0];
-  const to = (path: string) => path ? `/mysobo/owner/${path}` : "/mysobo/owner";
+  const to = (path: string) => path ? `/sobo/business-owner/${path}` : "/sobo/business-owner";
   const clear = () => { setNotice(""); setError(""); };
 
   const bottom = (
@@ -205,7 +209,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
   );
 
   return (
-    <Shell user={user} onAuthChange={onAuthChange} bottomNav={bottom}>
+    <Shell user={user} onAuthChange={onAuthChange} bottomNav={bottom} dashboard>
       <div className="odLayout">
         <aside className="odSide" aria-label={t("od.workspace")}>
           <Link className="odUser" to={to("profile")} onClick={clear}>
@@ -245,7 +249,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           </div>
         </aside>
         <div className="odMain">
-          <p className="odCrumbs"><Link to="/mysobo/owner">{t("od.portal")}</Link><span aria-hidden="true">›</span><span>{t(active.key)}</span></p>
+          <p className="odCrumbs"><Link to="/sobo/business-owner">{t("od.portal")}</Link><span aria-hidden="true">›</span><span>{t(active.key)}</span></p>
           {(error || notice) && (
             <div className="odFeedback" role="status">
               {error && <p className="formError">{error}</p>}
@@ -356,7 +360,7 @@ function OwnerWelcome() {
         <LeafMark size={60} />
         <h2>{t("od.startTitle")}</h2>
         <p>{t("od.startText")}</p>
-        <a className="odBtn odFull" href="/mysobo/owner?dialog=login">{t("od.startButtonGoogle")}</a>
+        <a className="odBtn odFull" href="/sobo/business-owner?dialog=login">{t("od.startButtonGoogle")}</a>
       </aside>
       <div className="odWelcomeWide"><PricingTable /></div>
     </section>
@@ -444,11 +448,11 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
   }
 
   const steps: { key: MessageKey; done: boolean; icon: string; action: () => void }[] = [
-    { key: "cd.gs1", done: owned.length > 0, icon: "store", action: () => navigate("/mysobo/owner/add") },
-    { key: "cd.gs2", done: owned.some((item) => listingState(item) !== "draft"), icon: "send", action: () => (firstDraft ? askApproval(firstDraft) : navigate("/mysobo/owner/businesses")) },
-    { key: "cd.gs3", done: shared, icon: "copy", action: () => (firstLive ? void copyLink(firstLive) : navigate("/mysobo/owner/businesses")) },
-    { key: "cd.gs4", done: posts.length > 0, icon: "tag", action: () => navigate("/mysobo/owner/offers") },
-    { key: "cd.gs5", done: owned.some((item) => planOf(item) !== "free") || Boolean(plans?.requests.length), icon: "card", action: () => navigate("/mysobo/owner/plans") },
+    { key: "cd.gs1", done: owned.length > 0, icon: "store", action: () => navigate("/sobo/business-owner/add") },
+    { key: "cd.gs2", done: owned.some((item) => listingState(item) !== "draft"), icon: "send", action: () => (firstDraft ? askApproval(firstDraft) : navigate("/sobo/business-owner/businesses")) },
+    { key: "cd.gs3", done: shared, icon: "copy", action: () => (firstLive ? void copyLink(firstLive) : navigate("/sobo/business-owner/businesses")) },
+    { key: "cd.gs4", done: posts.length > 0, icon: "tag", action: () => navigate("/sobo/business-owner/offers") },
+    { key: "cd.gs5", done: owned.some((item) => planOf(item) !== "free") || Boolean(plans?.requests.length), icon: "card", action: () => navigate("/sobo/business-owner/plans") },
   ];
   const doneCount = steps.filter((step) => step.done).length;
 
@@ -472,14 +476,14 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
           <p>{today}</p>
         </div>
         <div className="ovHeadActions">
-          <Link className="cdBtn outline" to="/mysobo/owner/plans"><Icon name="card" size={16} />{t("cd.managePlans")}</Link>
+          <Link className="cdBtn outline" to="/sobo/business-owner/plans"><Icon name="card" size={16} />{t("cd.managePlans")}</Link>
           <div className="cdCreate">
             <button type="button" className="cdBtn dark" aria-expanded={menu} onClick={() => setMenu((open) => !open)}><Icon name="plus" size={16} />{t("cd.create")}<Icon name="chevron" size={14} /></button>
             {menu && (
               <div className="cdMenu" role="menu">
-                <Link role="menuitem" to="/mysobo/owner/add"><span className="wizTileIcon"><Icon name="store" size={16} /></span><span><b>{t("cd.createBusiness")}</b><small>{t("cd.createBusinessHint")}</small></span></Link>
-                <Link role="menuitem" to="/mysobo/owner/offers"><span className="wizTileIcon"><Icon name="tag" size={16} /></span><span><b>{t("cd.createOffer")}</b><small>{t("cd.createOfferHint")}</small></span></Link>
-                <Link role="menuitem" to="/mysobo/owner/photos"><span className="wizTileIcon"><Icon name="image" size={16} /></span><span><b>{t("ov.addPhotos")}</b><small>{t("ov.addPhotosHint")}</small></span></Link>
+                <Link role="menuitem" to="/sobo/business-owner/add"><span className="wizTileIcon"><Icon name="store" size={16} /></span><span><b>{t("cd.createBusiness")}</b><small>{t("cd.createBusinessHint")}</small></span></Link>
+                <Link role="menuitem" to="/sobo/business-owner/offers"><span className="wizTileIcon"><Icon name="tag" size={16} /></span><span><b>{t("cd.createOffer")}</b><small>{t("cd.createOfferHint")}</small></span></Link>
+                <Link role="menuitem" to="/sobo/business-owner/photos"><span className="wizTileIcon"><Icon name="image" size={16} /></span><span><b>{t("ov.addPhotos")}</b><small>{t("ov.addPhotosHint")}</small></span></Link>
               </div>
             )}
           </div>
@@ -509,7 +513,7 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
           <strong>{completeness}%</strong>
           <span className="ovMeter" aria-hidden="true"><span style={{ width: `${completeness}%` }} /></span>
         </article>
-        <Link className="ovCta" to="/mysobo/owner/offers"><Icon name="tag" size={20} /><span>{t("vf.weekendOffer")}</span><Icon name="arrow" size={16} /></Link>
+        <Link className="ovCta" to="/sobo/business-owner/offers"><Icon name="tag" size={20} /><span>{t("vf.weekendOffer")}</span><Icon name="arrow" size={16} /></Link>
       </section>
 
       <div className="ovGrid">
@@ -575,7 +579,7 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
                         ) : state === "draft" ? (
                           <button type="button" className="cdBtn small" onClick={() => askApproval(business)}><Icon name="send" size={14} />{t("od.sendApproval")}</button>
                         ) : <span className="ovRowMeta">{t("od.waitingShort")}</span>}
-                        <Link className="cdIconBtn" to={`/mysobo/owner/businesses?edit=${business.id}`} aria-label={t("od.editListing")} title={t("od.editListing")}><Icon name="draft" size={16} /></Link>
+                        <Link className="cdIconBtn" to={`/sobo/business-owner/businesses?edit=${business.id}`} aria-label={t("od.editListing")} title={t("od.editListing")}><Icon name="draft" size={16} /></Link>
                       </div>
                     </li>
                   );
@@ -596,7 +600,7 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
                   </li>
                 ))}
               </ul>
-            ) : <p className="mutedText ovEmpty">{t("cd.noOffers")} <Link className="cdLink" to="/mysobo/owner/offers">{t("vf.weekendOffer")}</Link></p>)}
+            ) : <p className="mutedText ovEmpty">{t("cd.noOffers")} <Link className="cdLink" to="/sobo/business-owner/offers">{t("vf.weekendOffer")}</Link></p>)}
 
             {tab === "activity" && (activity.length ? (
               <ul className="ovRows">
@@ -621,9 +625,9 @@ function Overview({ user, owned, plans, posts, isLoading, askApproval }: DashDat
           </ul>
           <div className="ovPlanRow">
             <span><small>{t("ov.plan")}</small><PlanBadge plan={bestPlan} /></span>
-            {bestPlan !== "premium" && <Link className="cdBtn dark small" to="/mysobo/owner/plans"><Icon name="star" size={14} />{t("cd.upgrade")}</Link>}
+            {bestPlan !== "premium" && <Link className="cdBtn dark small" to="/sobo/business-owner/plans"><Icon name="star" size={14} />{t("cd.upgrade")}</Link>}
           </div>
-          <Link className="ovPhotoNudge" to="/mysobo/owner/photos"><Icon name="image" size={18} /><span>{t("ov.photoNudge")}</span><Icon name="arrow" size={14} /></Link>
+          <Link className="ovPhotoNudge" to="/sobo/business-owner/photos"><Icon name="image" size={18} /><span>{t("ov.photoNudge")}</span><Icon name="arrow" size={14} /></Link>
         </aside>
       </div>
     </div>
@@ -798,7 +802,7 @@ function VerifyListing() {
                   <button type="button" className="odBtn small" onClick={() => setProofFor(business)}>{t("vf.request")}</button>
                 </li>
               ))}
-              {!isFetching && matches.length === 0 && <li><p className="mutedText">{t("vf.noMatch")}</p><Link className="odBtn small" to="/mysobo/owner/add">{t("od.nav.add")}</Link></li>}
+              {!isFetching && matches.length === 0 && <li><p className="mutedText">{t("vf.noMatch")}</p><Link className="odBtn small" to="/sobo/business-owner/add">{t("od.nav.add")}</Link></li>}
             </ul>
           )}
           {proofFor && (
@@ -838,7 +842,7 @@ function Empty({ text, to, cta }: { text: string; to: string; cta: string }) {
     <div className="odEmpty">
       <IconBadge icon={Store} size={64} />
       <p>{text}</p>
-      <Link className="odBtn" to={`/mysobo/owner/${to}`}>{cta}</Link>
+      <Link className="odBtn" to={`/sobo/business-owner/${to}`}>{cta}</Link>
     </div>
   );
 }
@@ -863,7 +867,7 @@ function MyBusinesses({ owned, isLoading, perform, askApproval }: DashData) {
   return (
     <>
       <PageHead title={t("od.nav.businesses")} copy={t("od.businessesCopy")}>
-        <Link className="odBtn add" to="/mysobo/owner/add"><Icon name="plus" size={18} />{t("od.nav.add")}</Link>
+        <Link className="odBtn add" to="/sobo/business-owner/add"><Icon name="plus" size={18} />{t("od.nav.add")}</Link>
       </PageHead>
       <section className="odCard odFilters">
         <label className="odSearch"><span className="srOnly">{t("od.searchBusinesses")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("od.searchBusinesses")} /></label>
@@ -1014,7 +1018,7 @@ function AddBusiness({ perform, askApproval, owned }: DashData & { user?: Portal
     }), t("od.created"));
     if (created) {
       setFormKey((key) => key + 1);
-      navigate("/mysobo/owner/businesses");
+      navigate("/sobo/business-owner/businesses");
     }
   }
 
@@ -1355,6 +1359,7 @@ function Profile({ user }: { user: PortalUser }) {
               </button>
             ))}
           </div>
+          <ThemePicker user={user} />
         </section>
       </div>
     </>

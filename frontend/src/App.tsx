@@ -34,21 +34,28 @@ import { NeighbourhoodHub, fadeUp, stagger } from "./hub";
 import { motion, useReducedMotion } from "framer-motion";
 import { SMS_OTP_ENABLED } from "./google";
 import { AuthScreen } from "./auth";
+import { ME_KEY, ROUTES, useMe, type LoginResult } from "./session";
+import { useApplyTheme } from "./theme";
+import { ResidentDashboard } from "./resident";
 
 export function Shell({
   children,
   user,
   onAuthChange,
   bottomNav,
+  dashboard = false,
 }: {
   children: ReactNode;
   user?: PortalUser;
   onAuthChange: () => void;
+  /** Fixed-viewport dashboard layout on desktop (sidebar + internally scrolling main). */
+  dashboard?: boolean;
   /** Phone tab bar. Omit for the resident tabs; pass null for none. */
   bottomNav?: ReactNode | null;
 }) {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState("");
   const { t } = useT();
@@ -56,9 +63,11 @@ export function Shell({
   async function logout() {
     try {
       await apiPost<void>("/auth/logout/");
-      sessionStorage.removeItem("mysobo-token");
       setLogoutError("");
+      queryClient.setQueryData(ME_KEY, null);
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_KEY[0] });
       onAuthChange();
+      navigate(ROUTES.discover);
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : t("err.logout"));
     }
@@ -67,25 +76,30 @@ export function Shell({
   function closeLogin() {
     const next = new URLSearchParams(params);
     next.delete("dialog");
+    next.delete("go");
     setParams(next);
   }
 
-  function loginComplete() {
-    queryClient.invalidateQueries();
+  /** Header log-in goes to the person's home; a log-in asked for on a listing stays on that page. */
+  function loginComplete(result: LoginResult) {
+    const goHome = params.get("go") === "home";
+    void queryClient.invalidateQueries();
     onAuthChange();
-    closeLogin();
+    if (goHome && result.home) navigate(result.home);
+    else closeLogin();
   }
 
   return (
-    <div className={`app ${bottomNav === null ? "" : "hasTabbar"}`}>
+    <div className={`app ${bottomNav === null ? "" : "hasTabbar"} ${dashboard ? "dash" : ""}`}>
       <header className="topbar">
-        <a className="brand" href="/mysobo" aria-label={t("nav.home")}>
+        <a className="brand" href={ROUTES.discover} aria-label={t("nav.home")}>
           <Logo size={30} />
         </a>
         <nav>
           <a className="topLink" href="/mysobo" aria-current={location.pathname === "/mysobo" ? "page" : undefined}>{t("nav.residents")}</a>
-          <a className="topLink" href="/mysobo/owner" aria-current={location.pathname.startsWith("/mysobo/owner") ? "page" : undefined}>{t("nav.business")}</a>
-          {user?.is_superadmin && <a href="/mysobo/superadmin">{t("nav.superadmin")}</a>}
+          {user?.home !== ROUTES.owner && <a className="topLink" href={ROUTES.owner} aria-current={location.pathname.startsWith("/sobo/business-owner") ? "page" : undefined}>{t("nav.business")}</a>}
+          {user?.is_superadmin && <a className="topLink" href={ROUTES.admin} aria-current={location.pathname.startsWith(ROUTES.admin) ? "page" : undefined}>{t("nav.superadmin")}</a>}
+          {user && !user.is_superadmin && user.home && <a className="topLink" href={user.home} aria-current={location.pathname.startsWith(user.home) ? "page" : undefined}>{t("nav.dashboard")}</a>}
           <InstallButton />
           <LanguageSwitch />
           {user ? (
@@ -94,6 +108,7 @@ export function Shell({
             <button type="button" className="button buttonLight" onClick={() => {
               const next = new URLSearchParams(params);
               next.set("dialog", "login");
+              next.set("go", "home");
               setParams(next);
             }}>{t("nav.login")}</button>
           )}
@@ -109,7 +124,7 @@ export function Shell({
   );
 }
 
-function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () => void; onSuccess: () => void; startWith?: "login" | "signup" }) {
+function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () => void; onSuccess: (result: LoginResult) => void; startWith?: "login" | "signup" }) {
   const { t } = useT();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -153,9 +168,7 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
     setPending(true);
     setError("");
     try {
-      const response = await apiPost<{ token: string }>("/auth/otp/verify/", { mobile, code });
-      sessionStorage.setItem("mysobo-token", response.token);
-      onSuccess();
+      onSuccess(await apiPost<LoginResult>("/auth/otp/verify/", { mobile, code }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("err.verify"));
     } finally {
@@ -291,8 +304,8 @@ function ResidentTabbar() {
   const items: { href: string; label: string; icon: ReactNode; active: boolean }[] = [
     { href: "/mysobo", label: t("nav.explore"), active: path === "/mysobo" && location.hash !== "#categories", icon: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></> },
     { href: "/mysobo#categories", label: t("nav.categories"), active: path.startsWith("/services") || path.startsWith("/products") || path.startsWith("/categories") || location.hash === "#categories", icon: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></> },
-    { href: "/mysobo/saved", label: t("nav.saved"), active: path === "/mysobo/saved", icon: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /> },
-    { href: "/mysobo/owner", label: t("nav.myBusiness"), active: path.startsWith("/mysobo/owner"), icon: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M5.5 11v8.5h13V11M10 19.5v-4h4v4" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /></> },
+    { href: "/sobo/resident/saved", label: t("nav.saved"), active: path === "/sobo/resident/saved", icon: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /> },
+    { href: "/sobo/business-owner", label: t("nav.myBusiness"), active: path.startsWith("/sobo/business-owner"), icon: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M5.5 11v8.5h13V11M10 19.5v-4h4v4" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /></> },
   ];
   return (
     <nav className="tabbar" aria-label={t("nav.home")}>
@@ -326,7 +339,7 @@ function openState(business: Business): "open" | "closed" | "" {
 }
 
 function useSavedSet() {
-  const signedIn = Boolean(sessionStorage.getItem("mysobo-token"));
+  const signedIn = Boolean(useMe().data);
   const { data } = useQuery({
     queryKey: ["my-saved"],
     queryFn: () => apiGet<Business[]>("/me/saved/"),
@@ -336,7 +349,7 @@ function useSavedSet() {
   return { signedIn, saved: new Set((data ?? []).map((item) => item.id)) };
 }
 
-function BusinessCards({ businesses }: { businesses: Business[] }) {
+export function BusinessCards({ businesses }: { businesses: Business[] }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -422,31 +435,6 @@ function BusinessCards({ businesses }: { businesses: Business[] }) {
         );
       })}
     </motion.div>
-  );
-}
-
-function SavedPage({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
-  const { t } = useT();
-  const signedIn = Boolean(sessionStorage.getItem("mysobo-token"));
-  const { data = [], isLoading } = useQuery({
-    queryKey: ["my-saved"],
-    queryFn: () => apiGet<Business[]>("/me/saved/"),
-    enabled: signedIn,
-    retry: false,
-  });
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <section className="section savedPage">
-        <p className="eyebrow">{t("nav.saved")}</p>
-        <h1>{t("saved.title")}</h1>
-        <p className="mutedText">{t("saved.copy")}</p>
-        {!signedIn ? (
-          <div className="emptyState"><IconBadge icon={LockKeyhole} /><p>{t("saved.signIn")}</p><Link className="button" to="/mysobo/saved?dialog=login">{t("nav.login")}</Link></div>
-        ) : isLoading ? <p className="emptyState">{t("home.finding")}</p>
-          : data.length ? <BusinessCards businesses={data} />
-            : <div className="emptyState"><IconBadge icon={Heart} /><p>{t("saved.empty")}</p><Link className="button" to="/mysobo">{t("nav.explore")}</Link></div>}
-      </section>
-    </Shell>
   );
 }
 
@@ -1610,28 +1598,45 @@ export function CategoryManager({ run }: { run: AdminAction }) {
   );
 }
 
+/** Sends old /mysobo/owner/* and /mysobo/superadmin/* links to their new homes. */
+function MovedTo({ from, to }: { from: string; to: string }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.pathname.slice(from.length)}${location.search}${location.hash}`} replace />;
+}
+
+/** PWA start URL: open the person's own dashboard, or discovery for guests. */
+function AppEntry() {
+  const { data: me, isLoading } = useMe();
+  if (isLoading) return <div className="pageLoading" aria-busy="true" />;
+  return <Navigate to={me?.home ?? ROUTES.discover} replace />;
+}
+
 export default function App() {
-  const [authVersion, setAuthVersion] = useState(0);
-  const hasToken = Boolean(sessionStorage.getItem("mysobo-token"));
-  const { data: user } = useQuery({
-    queryKey: ["me", authVersion],
-    queryFn: () => apiGet<PortalUser>("/auth/me/"),
-    enabled: hasToken,
-    retry: false,
-  });
-  const authChanged = () => setAuthVersion((value) => value + 1);
+  const { data: me, isLoading } = useMe();
+  const queryClient = useQueryClient();
+  useApplyTheme(me);
+  const user = me ?? undefined;
+  const authChanged = () => { void queryClient.invalidateQueries({ queryKey: ME_KEY }); };
+  /** Dashboards wait for the session check so signed-in people never see the guest view flash. */
+  const signedInOnly = (page: ReactNode) => (isLoading ? <div className="pageLoading" aria-busy="true" /> : page);
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/mysobo" replace />} />
+      <Route path="/" element={<Navigate to={ROUTES.landing} replace />} />
+      {/* Phase B replaces this with the /sobo landing page. */}
+      <Route path="/sobo" element={<Navigate to={ROUTES.discover} replace />} />
+      <Route path="/sobo/app" element={<AppEntry />} />
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
-      <Route path="/mysobo/saved" element={<SavedPage user={user} onAuthChange={authChanged} />} />
-      <Route path="/mysobo/owner/*" element={<OwnerDashboard user={user} onAuthChange={authChanged} />} />
-      <Route path="/mysobo/superadmin/*" element={<SuperAdminDashboard user={user} onAuthChange={authChanged} />} />
+      <Route path="/sobo/resident/*" element={signedInOnly(<ResidentDashboard user={user} onAuthChange={authChanged} />)} />
+      <Route path="/sobo/business-owner/*" element={signedInOnly(<OwnerDashboard user={user} onAuthChange={authChanged} />)} />
+      <Route path="/sobo/admin/*" element={signedInOnly(<SuperAdminDashboard user={user} onAuthChange={authChanged} />)} />
+      <Route path="/mysobo/saved" element={<Navigate to={ROUTES.residentSaved} replace />} />
+      <Route path="/mysobo/owner/*" element={<MovedTo from="/mysobo/owner" to={ROUTES.owner} />} />
+      <Route path="/mysobo/superadmin/*" element={<MovedTo from="/mysobo/superadmin" to={ROUTES.admin} />} />
       <Route path="/services/:categorySlug/*" element={<CategoryPage kind="service" user={user} onAuthChange={authChanged} />} />
       <Route path="/products/:categorySlug/*" element={<CategoryPage kind="product" user={user} onAuthChange={authChanged} />} />
       <Route path="/categories/:categorySlug/*" element={<CategoryPage kind="all" user={user} onAuthChange={authChanged} />} />
       <Route path="/business/:slug" element={<ListingPage user={user} onAuthChange={authChanged} />} />
-      <Route path="*" element={<Navigate to="/mysobo" replace />} />
+      <Route path="*" element={<Navigate to={ROUTES.discover} replace />} />
     </Routes>
   );
 }

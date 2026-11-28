@@ -16,33 +16,57 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import AdminRole, Profile
+from accounts.sessions import home_for, is_super_admin, refresh_session, sign_out
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from billing.models import AppSetting, Invoice, Payment, PlanPrice, Subscription, SubscriptionRequest
 from .models import AuditLog, Business, BusinessHour, BusinessMember, BusinessPost, Category, Claim, Event, Report, Subcategory
 from .permissions import IsSuperAdmin
 from .serializers import BusinessPostSerializer, BusinessSerializer
 
 
+class CsrfView(APIView):
+    """Sets the csrftoken cookie the browser app sends back as X-CSRFToken."""
+
+    authentication_classes = ()
+    permission_classes = (permissions.AllowAny,)
+
+    @method_decorator(ensure_csrf_cookie)
+    def get(self, request):
+        return Response({"ok": True})
+
+
 class CurrentUserView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
+        refresh_session(request)
+        user = request.user
+        profile, _ = Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
         return Response({
-            "id": str(request.user.id),
-            "username": request.user.username,
-            "mobile": request.user.mobile,
-            "email": request.user.email,
-            "name": request.user.get_full_name(),
-            "is_superadmin": request.user.admin_roles.filter(
-                role=AdminRole.Role.SUPER_ADMIN
-            ).exists(),
+            "id": str(user.id),
+            "username": user.username,
+            "mobile": user.mobile,
+            "email": user.email,
+            "name": user.get_full_name() or profile.name,
+            "is_superadmin": is_super_admin(user),
+            "account_type": profile.account_type,
+            "theme": profile.theme,
+            "has_business": BusinessMember.objects.filter(user=user, business__deleted_at__isnull=True).exists(),
+            "home": home_for(user),
         })
 
 
 class LogoutView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
+    """Ends this browser's session. The account, listings and history stay."""
+
+    permission_classes = (permissions.AllowAny,)
 
     def post(self, request):
-        Token.objects.filter(user=request.user).delete()
+        if request.user.is_authenticated and request.auth is not None:
+            # Signed in with an API token: revoke that token only.
+            Token.objects.filter(key=getattr(request.auth, "key", request.auth)).delete()
+        sign_out(request)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -868,21 +892,40 @@ class OwnerInvoicesView(APIView):
 
 
 class PreferencesView(APIView):
+    """Per-person settings: WhatsApp alerts, dashboard theme, account type."""
+
     permission_classes = (permissions.IsAuthenticated,)
+
+    @staticmethod
+    def _body(profile):
+        return {"whatsapp_alerts": profile.whatsapp_alerts, "theme": profile.theme, "account_type": profile.account_type}
 
     def get(self, request):
         profile, _ = Profile.objects.get_or_create(id=request.user)
-        return Response({"whatsapp_alerts": profile.whatsapp_alerts})
+        return Response(self._body(profile))
 
     def patch(self, request):
         profile, _ = Profile.objects.get_or_create(id=request.user)
-        value = request.data.get("whatsapp_alerts")
-        if not isinstance(value, bool):
-            return Response({"detail": "whatsapp_alerts must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
-        profile.whatsapp_alerts = value
-        profile.save(update_fields=("whatsapp_alerts",))
-        return Response({"whatsapp_alerts": profile.whatsapp_alerts})
-
+        changed = []
+        if "whatsapp_alerts" in request.data:
+            value = request.data.get("whatsapp_alerts")
+            if not isinstance(value, bool):
+                return Response({"detail": "whatsapp_alerts must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
+            profile.whatsapp_alerts = value
+            changed.append("whatsapp_alerts")
+        if "theme" in request.data:
+            if request.data.get("theme") not in Profile.Theme.values:
+                return Response({"detail": "Choose one of the listed themes."}, status=status.HTTP_400_BAD_REQUEST)
+            profile.theme = request.data["theme"]
+            changed.append("theme")
+        if "account_type" in request.data:
+            if request.data.get("account_type") not in Profile.AccountType.values:
+                return Response({"detail": "Choose resident or business owner."}, status=status.HTTP_400_BAD_REQUEST)
+            profile.account_type = request.data["account_type"]
+            changed.append("account_type")
+        if changed:
+            profile.save(update_fields=changed)
+        return Response(self._body(profile))
 
 
 class HealthView(APIView):

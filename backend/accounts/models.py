@@ -26,6 +26,19 @@ class Profile(models.Model):
     consent_at = models.DateTimeField(null=True, blank=True)
     consent_version = models.CharField(max_length=32, blank=True)
     whatsapp_alerts = models.BooleanField(default=True)
+
+    class AccountType(models.TextChoices):
+        RESIDENT = "resident", "Resident"
+        BUSINESS_OWNER = "business_owner", "Business owner"
+
+    class Theme(models.TextChoices):
+        WARM_WHITE = "warm", "Warm white"
+        SOFT_NEUTRAL = "neutral", "Soft neutral"
+        PROFESSIONAL_LIGHT = "light", "Professional light"
+        DARK = "dark", "Dark"
+
+    account_type = models.CharField(max_length=20, choices=AccountType.choices, default=AccountType.RESIDENT, db_default=AccountType.RESIDENT)
+    theme = models.CharField(max_length=10, choices=Theme.choices, default=Theme.WARM_WHITE, db_default=Theme.WARM_WHITE)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

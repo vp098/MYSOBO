@@ -53,7 +53,8 @@ class OTPAuthTests(TestCase):
             format="json",
         )
         self.assertEqual(verify.status_code, 200)
-        self.assertTrue(verify.data["token"])
+        self.assertEqual(verify.data["home"], "/sobo/resident")
+        self.assertEqual(self.client.get("/api/auth/me/").status_code, 200)  # session cookie works
         self.assertTrue(User.objects.filter(mobile="9876543210").exists())
         profile = Profile.objects.get(id__mobile="9876543210")
         self.assertIsNotNone(profile.consent_at)
@@ -154,7 +155,7 @@ class GoogleLoginTests(TestCase):
         user = User.objects.get(email="owner@gmail.com")
         self.assertEqual(user.first_name, "Hetal")
         self.assertFalse(user.has_usable_password())
-        me = self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Token {response.json()['token']}")
+        me = self.client.get("/api/auth/me/")
         self.assertEqual(me.json()["email"], "owner@gmail.com")
 
     def test_existing_email_signs_into_same_account(self):
@@ -162,7 +163,7 @@ class GoogleLoginTests(TestCase):
         response = self.login(self.claims)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(User.objects.filter(email__iexact="owner@gmail.com").count(), 1)
-        self.assertEqual(Token.objects.get(key=response.json()["token"]).user, existing)
+        self.assertEqual(self.client.session["_auth_user_id"], str(existing.pk))
 
     def test_rejects_token_for_another_app(self):
         response = self.login({**self.claims, "aud": "someone-else"})
@@ -205,8 +206,9 @@ class DemoEmailLoginTests(TestCase):
         first = self.post("Riya.Shah@Gmail.com")
         self.assertEqual(first.status_code, 200)
         second = self.post("riya.shah@gmail.com")
-        self.assertEqual(first.json()["token"], second.json()["token"])
+        self.assertEqual(second.status_code, 200)
         user = User.objects.get(email="riya.shah@gmail.com")
+        self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
         self.assertEqual((user.first_name, user.last_name), ("Riya", "Shah"))
 
     @override_settings(DEMO_EMAIL_LOGIN=True)
@@ -238,15 +240,41 @@ class EmailPasswordAuthTests(TestCase):
     def test_signup_then_login_with_any_valid_email(self):
         response = self.register()
         self.assertEqual(response.status_code, 201, response.content)
-        token = response.json()["token"]
-        me = APIClient(HTTP_AUTHORIZATION=f"Token {token}").get("/api/auth/me/")
+        self.assertEqual(response.json()["home"], "/sobo/resident")
+        self.assertNotIn("token", response.json())  # nothing secret for the browser to store
+        self.assertIn("mysobo_session", response.cookies)
+        self.assertTrue(response.cookies["mysobo_session"]["httponly"])
+        me = self.client.get("/api/auth/me/")
         self.assertEqual(me.status_code, 200)
         user = User.objects.get(email="hetal@example.com")
         self.assertEqual(user.first_name, "Hetal")
         self.assertTrue(user.check_password("Neem-leaf-2026"))
+        # Logging out ends the session but keeps the account.
+        self.assertEqual(self.client.post("/api/auth/logout/").status_code, 204)
+        self.assertEqual(self.client.get("/api/auth/me/").status_code, 401)
+        self.assertTrue(User.objects.filter(pk=user.pk).exists())
         login = self.client.post("/api/auth/email/login/", {"email": "HETAL@example.com", "password": "Neem-leaf-2026"}, format="json")
         self.assertEqual(login.status_code, 200)
-        self.assertEqual(login.json()["token"], token)
+        self.assertEqual(self.client.get("/api/auth/me/").json()["email"], "hetal@example.com")
+
+    def test_owner_signup_goes_to_owner_dashboard_and_session_lasts_30_days(self):
+        response = self.register(account_type="business_owner", email="owner2@example.com")
+        self.assertEqual(response.json()["home"], "/sobo/business-owner")
+        self.assertEqual(self.client.session.get_expiry_age(), 30 * 24 * 60 * 60)
+        me = self.client.get("/api/auth/me/").json()
+        self.assertEqual((me["account_type"], me["home"]), ("business_owner", "/sobo/business-owner"))
+
+    def test_csrf_is_enforced_for_session_requests(self):
+        self.register()
+        strict = APIClient(enforce_csrf_checks=True)
+        strict.cookies = self.client.cookies
+        blocked = strict.patch("/api/me/preferences/", {"theme": "dark"}, format="json")
+        self.assertEqual(blocked.status_code, 403)
+        strict.get("/api/auth/csrf/")
+        token = strict.cookies["csrftoken"].value
+        ok = strict.patch("/api/me/preferences/", {"theme": "dark"}, format="json", HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["theme"], "dark")
 
     def test_clear_errors(self):
         self.assertEqual(self.register(email="not-an-email").json()["field"], "email")

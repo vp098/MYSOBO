@@ -5,6 +5,7 @@ import { apiPost } from "./services/api";
 import { LanguageSwitch, useT } from "./i18n";
 import { Logo } from "./logo";
 import { GOOGLE_CLIENT_ID, GoogleSignIn } from "./google";
+import type { LoginResult } from "./session";
 
 type Kind = "signup" | "login";
 type Field = "name" | "email" | "password";
@@ -17,9 +18,10 @@ const SOCIETIES = ["Safal Parisar", "Iscon Platinum", "Shivalik Sharda", "Applew
  * Email + password works everywhere; Google and mobile OTP appear only when
  * they are configured.
  */
-export function AuthScreen({ startWith, onSuccess, onClose, onMobile }: {
+export function AuthScreen({ startWith, onSuccess, onClose, onMobile, accountType: initialType = "resident" }: {
   startWith: Kind;
-  onSuccess: () => void;
+  onSuccess: (result: LoginResult) => void;
+  accountType?: "resident" | "business_owner";
   onClose: () => void;
   onMobile?: () => void;
 }) {
@@ -33,6 +35,7 @@ export function AuthScreen({ startWith, onSuccess, onClose, onMobile }: {
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<{ field?: Field; text: string; exists?: boolean } | null>(null);
   const [pending, setPending] = useState(false);
+  const [accountType, setAccountType] = useState(initialType);
   const firstInput = useRef<HTMLInputElement>(null);
   const signup = kind === "signup";
 
@@ -67,10 +70,8 @@ export function AuthScreen({ startWith, onSuccess, onClose, onMobile }: {
     setPending(true);
     try {
       const path = signup ? "/auth/email/register/" : "/auth/email/login/";
-      const body = signup ? { name: name.trim(), email: email.trim(), password } : { email: email.trim(), password };
-      const response = await apiPost<{ token: string }>(path, body);
-      sessionStorage.setItem("mysobo-token", response.token);
-      onSuccess();
+      const body = signup ? { name: name.trim(), email: email.trim(), password, account_type: accountType } : { email: email.trim(), password };
+      onSuccess(await apiPost<LoginResult>(path, body));
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : t("err.login");
       const exists = /already exists/i.test(text);
@@ -111,6 +112,17 @@ export function AuthScreen({ startWith, onSuccess, onClose, onMobile }: {
               <p className="auSub">{signup ? t("au.signupSub") : t("au.loginSub")}</p>
 
               <form onSubmit={submit} noValidate>
+                {signup && (
+                  <div className="auType" role="radiogroup" aria-label={t("au.typeLabel")}>
+                    {(["resident", "business_owner"] as const).map((value) => (
+                      <button key={value} type="button" role="radio" aria-checked={accountType === value}
+                        className={accountType === value ? "on" : ""} onClick={() => setAccountType(value)}>
+                        <b>{t(value === "resident" ? "au.typeResident" : "au.typeOwner")}</b>
+                        <small>{t(value === "resident" ? "au.typeResidentHint" : "au.typeOwnerHint")}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {signup && (
                   <label className={`auField ${nameError ? "bad" : ""}`}>
                     <span>{t("au.name")}</span>
