@@ -1,13 +1,24 @@
-"""What each plan allows. Phase D makes these admin-editable in the database."""
+"""What each plan allows. Stored on PlanPrice and editable by super admins."""
 
-PHOTO_LIMITS = {"free": 3, "pro": 20, "premium": 100}
-# Offers that are pending or approved and not yet expired, per listing.
-ACTIVE_OFFER_LIMITS = {"free": 1, "pro": 5, "premium": 20}
+DEFAULT_LIMITS = {
+    "free": {"max_photos": 3, "max_active_offers": 1},
+    "pro": {"max_photos": 20, "max_active_offers": 5},
+    "premium": {"max_photos": 100, "max_active_offers": 20},
+}
+
+
+def _limit(plan, field):
+    from .models import PlanPrice
+
+    row = PlanPrice.objects.filter(plan=plan).only(field).first()
+    if row is not None:
+        return getattr(row, field)
+    return DEFAULT_LIMITS.get(plan, DEFAULT_LIMITS["free"])[field]
 
 
 def photo_limit(plan):
-    return PHOTO_LIMITS.get(plan, PHOTO_LIMITS["free"])
+    return _limit(plan, "max_photos")
 
 
 def active_offer_limit(plan):
-    return ACTIVE_OFFER_LIMITS.get(plan, ACTIVE_OFFER_LIMITS["free"])
+    return _limit(plan, "max_active_offers")

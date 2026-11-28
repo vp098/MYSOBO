@@ -373,18 +373,12 @@ class BusinessAuthorizationTests(TestCase):
         admin = User.objects.create_user(username="billing-admin", password="test")
         AdminRole.objects.create(user=admin, role=AdminRole.Role.SUPER_ADMIN)
         self.client.force_authenticate(admin)
-        response = self.client.post(
-            "/api/admin/payments/",
-            {
-                "business_id": str(self.business_b.id),
-                "plan": "pro",
-                "amount_paise": 49900,
-                "gst_paise": 8982,
-                "method": "cash",
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, 201)
+        from billing.models import PlanPrice
+        from billing.services import create_invoice
+        PlanPrice.objects.update_or_create(plan="pro", defaults={"monthly_price": 499})
+        invoice, _ = create_invoice(self.business_b, "pro", timezone.localdate())
+        response = self.client.post(f"/api/admin/invoices/{invoice.id}/pay/", {"method": "cash"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(Payment.objects.count(), 1)
         self.assertEqual(Invoice.objects.count(), 1)
         self.business_b.refresh_from_db()
@@ -877,7 +871,11 @@ class OwnerToolsTests(TestCase):
         AdminRole.objects.create(user=admin, role=AdminRole.Role.SUPER_ADMIN)
         staff = APIClient()
         staff.force_authenticate(admin)
-        staff.post("/api/admin/payments/", {"business_id": str(self.business.id), "plan": "pro", "amount_paise": 49900, "method": "upi"}, format="json")
+        from billing.models import PlanPrice
+        from billing.services import create_invoice
+        PlanPrice.objects.update_or_create(plan="pro", defaults={"monthly_price": 499})
+        invoice, _ = create_invoice(self.business, "pro", timezone.localdate())
+        staff.post(f"/api/admin/invoices/{invoice.id}/pay/", {"method": "upi", "reference": "UTR9"}, format="json")
         rows = self.client.get("/api/owner/invoices/").json()
         self.assertEqual(rows[0]["business"], "Tools Shop")
         self.client.force_authenticate(self.other)
@@ -944,9 +942,15 @@ class ResilienceTests(TestCase):
         business = Business.objects.create(name="Payer", slug="payer", kind="service", source="owner")
         client = APIClient()
         client.force_authenticate(admin)
-        body = {"business_id": str(business.id), "plan": "pro", "amount_paise": 49900, "method": "upi", "gateway_ref": "UPI-123"}
-        self.assertEqual(client.post("/api/admin/payments/", body, format="json").status_code, 201)
-        second = client.post("/api/admin/payments/", body, format="json")
+        from datetime import date
+        from billing.models import PlanPrice
+        from billing.services import create_invoice
+        PlanPrice.objects.update_or_create(plan="pro", defaults={"monthly_price": 499})
+        first, _ = create_invoice(business, "pro", date(2026, 12, 1))
+        other, _ = create_invoice(business, "pro", date(2027, 1, 1))
+        body = {"method": "upi", "reference": "UPI-123"}
+        self.assertEqual(client.post(f"/api/admin/invoices/{first.id}/pay/", body, format="json").status_code, 200)
+        second = client.post(f"/api/admin/invoices/{other.id}/pay/", body, format="json")
         self.assertEqual(second.status_code, 409)
         self.assertEqual(second.json()["code"], "conflict")
         from billing.models import Subscription

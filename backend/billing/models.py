@@ -10,6 +10,8 @@ class PlanPrice(models.Model):
     plan = models.CharField(max_length=10, primary_key=True)
     monthly_price = models.PositiveIntegerField()
     active = models.BooleanField(default=True)
+    max_photos = models.PositiveIntegerField(default=3, db_default=3)
+    max_active_offers = models.PositiveIntegerField(default=1, db_default=1)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -69,11 +71,48 @@ class Payment(models.Model):
 
 
 class Invoice(models.Model):
+    """A monthly bill. It exists before payment; an admin marks it paid when UPI or cash arrives."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PAID = "paid", "Paid"
+        OVERDUE = "overdue", "Overdue"
+        CANCELLED = "cancelled", "Cancelled"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    payment = models.OneToOneField(Payment, on_delete=models.CASCADE, related_name="invoice")
-    number = models.CharField(max_length=100, unique=True)
+    seq = models.PositiveIntegerField(unique=True)
+    number = models.CharField(max_length=40, unique=True)
+    business = models.ForeignKey(Business, on_delete=models.PROTECT, related_name="invoices")
+    plan = models.CharField(max_length=10, choices=Business.Plan.choices)
+    period_start = models.DateField()
+    period_end = models.DateField()
     issued_on = models.DateField()
+    due_on = models.DateField()
+    amount_paise = models.BigIntegerField()
+    gst_percent = models.PositiveSmallIntegerField(default=18)
+    gst_paise = models.BigIntegerField()
+    total_paise = models.BigIntegerField()
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    # Business details as they were when the invoice was issued.
+    business_name = models.CharField(max_length=200)
+    business_address = models.TextField(blank=True)
+    business_phone = models.CharField(max_length=15, blank=True)
+    business_email = models.EmailField(blank=True)
+    business_gst = models.CharField(max_length=15, blank=True)
+    payment = models.OneToOneField(Payment, null=True, blank=True, on_delete=models.SET_NULL, related_name="invoice")
+    paid_on = models.DateTimeField(null=True, blank=True)
     pdf_path = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("business", "period_start"),
+                condition=~models.Q(status="cancelled"),
+                name="one_open_invoice_per_business_period",
+            ),
+        ]
+        indexes = [models.Index(fields=["status", "due_on"], name="invoice_status_due_idx")]
 
 
 class AppSetting(models.Model):

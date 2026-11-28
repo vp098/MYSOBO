@@ -293,7 +293,8 @@ class PublicPlansView(APIView):
         return Response({
             "gst_percent": GST_PERCENT,
             "plans": [
-                {"plan": row.plan, "monthly_price": row.monthly_price, "monthly_total": with_gst(row.monthly_price)}
+                {"plan": row.plan, "monthly_price": row.monthly_price, "monthly_total": with_gst(row.monthly_price),
+                 "max_photos": row.max_photos, "max_active_offers": row.max_active_offers}
                 for row in rows
             ],
         })
@@ -304,7 +305,7 @@ class OwnerPlansView(APIView):
 
     def get(self, request):
         businesses = Business.objects.filter(members__user=request.user).distinct()
-        prices = list(PlanPrice.objects.filter(active=True).values("plan", "monthly_price"))
+        prices = list(PlanPrice.objects.filter(active=True).values("plan", "monthly_price", "max_photos", "max_active_offers"))
         subscriptions = list(Subscription.objects.filter(
             business__in=businesses
         ).values("id", "business_id", "plan", "status", "expires_on"))
@@ -684,48 +685,60 @@ class AdminPlanRequestsView(APIView):
         )
         plan_request.reviewed_by = request.user
         plan_request.save(update_fields=("status", "reviewed_by"))
+        invoice = None
         if decision == "approve":
-            Subscription.objects.create(
-                business=plan_request.business,
-                plan=plan_request.requested_plan,
-                status=Subscription.Status.TRIAL,
-                trial=True,
-                starts_on=timezone.now(),
-                created_by=request.user,
-            )
-            plan_request.business.plan = plan_request.requested_plan
-            plan_request.business.save(update_fields=("plan", "updated_at"))
+            # The plan does not change yet: it starts when an admin records the payment for this invoice.
+            from billing.services import BillingError, create_invoice
+
+            Invoice.objects.filter(
+                business=plan_request.business, status__in=(Invoice.Status.PENDING, Invoice.Status.OVERDUE),
+                payment__isnull=True,
+            ).update(status=Invoice.Status.CANCELLED)
+            try:
+                invoice, _ = create_invoice(plan_request.business, plan_request.requested_plan, timezone.localdate(), request.user)
+            except BillingError as error:
+                transaction.set_rollback(True)
+                return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         AuditLog.objects.create(
             actor=request.user, action=f"plan_request_{decision}", target_type="Business",
             target_id=str(plan_request.business_id),
             after={"business": plan_request.business.name, "plan": plan_request.requested_plan},
         )
-        return Response({"id": str(plan_request.id), "status": plan_request.status})
+        return Response({"id": str(plan_request.id), "status": plan_request.status, "invoice": invoice.number if invoice else ""})
 
 
 class AdminPlansView(APIView):
     permission_classes = (IsSuperAdmin,)
 
     def get(self, request):
-        return Response(list(PlanPrice.objects.order_by("monthly_price").values("plan", "monthly_price", "active")))
+        return Response(list(PlanPrice.objects.order_by("monthly_price").values(
+            "plan", "monthly_price", "active", "max_photos", "max_active_offers"
+        )))
 
     def put(self, request):
         plan = request.data.get("plan")
-        price = request.data.get("monthly_price")
-        if plan not in Business.Plan.values or not isinstance(price, int) or isinstance(price, bool) or price < 0:
-            return Response({"detail": "Provide a valid plan and non-negative monthly price."}, status=status.HTTP_400_BAD_REQUEST)
-        item, _ = PlanPrice.objects.update_or_create(
-            plan=plan,
-            defaults={
-                "monthly_price": price,
-                "active": request.data.get("active", True),
-                "updated_by": request.user,
-            },
-        )
-        return Response({"plan": item.plan, "monthly_price": item.monthly_price, "active": item.active})
+        if plan not in Business.Plan.values:
+            return Response({"detail": "Choose a valid plan."}, status=status.HTTP_400_BAD_REQUEST)
+        current = PlanPrice.objects.filter(plan=plan).first()
+        values = {}
+        for field in ("monthly_price", "max_photos", "max_active_offers"):
+            value = request.data.get(field, getattr(current, field, None))
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 1_000_000:
+                return Response({"detail": f"{field} must be a whole number of 0 or more."}, status=status.HTTP_400_BAD_REQUEST)
+            values[field] = value
+        active = request.data.get("active", getattr(current, "active", True))
+        if not isinstance(active, bool):
+            return Response({"detail": "active must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
+        before = {field: getattr(current, field, None) for field in values} if current else {}
+        item, _ = PlanPrice.objects.update_or_create(plan=plan, defaults={**values, "active": active, "updated_by": request.user})
+        AuditLog.objects.create(actor=request.user, action="plan_updated", target_type="PlanPrice", target_id=plan,
+                                before=before, after={**values, "active": active})
+        return Response({"plan": item.plan, "active": item.active, **values})
 
 
 class AdminPaymentsView(APIView):
+    """Payments received. To record one, use POST /api/admin/invoices/<id>/pay/."""
+
     permission_classes = (IsSuperAdmin,)
 
     def get(self, request):
@@ -742,59 +755,6 @@ class AdminPaymentsView(APIView):
             "invoice": getattr(getattr(payment, "invoice", None), "number", ""),
             "gateway_ref": payment.gateway_ref,
         } for payment in payments])
-
-    @transaction.atomic
-    def post(self, request):
-        business = get_object_or_404(Business, id=request.data.get("business_id"))
-        plan = request.data.get("plan")
-        amount = request.data.get("amount_paise")
-        gst = request.data.get("gst_paise", 0)
-        method = request.data.get("method", "manual")
-        if plan not in Business.Plan.values or not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
-            return Response({"detail": "Provide a valid plan and non-negative amount in paise."}, status=status.HTTP_400_BAD_REQUEST)
-        if not isinstance(gst, int) or isinstance(gst, bool) or gst < 0:
-            return Response({"detail": "GST must be a non-negative amount in paise."}, status=status.HTTP_400_BAD_REQUEST)
-        if not isinstance(method, str) or not method.strip():
-            return Response({"detail": "Payment method is required."}, status=status.HTTP_400_BAD_REQUEST)
-        now = timezone.now()
-        subscription = Subscription.objects.create(
-            business=business,
-            plan=plan,
-            status=Subscription.Status.ACTIVE,
-            starts_on=now,
-            expires_on=now + timedelta(days=30),
-            created_by=request.user,
-        )
-        gateway_ref = request.data.get("gateway_ref") or f"manual-{uuid.uuid4()}"
-        if Payment.objects.filter(gateway_ref=gateway_ref).exists():
-            transaction.set_rollback(True)
-            return Response({"detail": "This payment reference was already recorded.", "code": "conflict"}, status=status.HTTP_409_CONFLICT)
-        payment = Payment.objects.create(
-            subscription=subscription,
-            amount_paise=amount,
-            gst_paise=gst,
-            method=method.strip(),
-            gateway_ref=gateway_ref,
-            status="paid",
-            paid_on=now,
-            recorded_by=request.user,
-        )
-        Invoice.objects.create(
-            payment=payment,
-            number=f"MS-{uuid.uuid4().hex[:12].upper()}",
-            issued_on=timezone.localdate(now),
-        )
-        business.plan = plan
-        business.plan_expires_on = subscription.expires_on
-        business.save(update_fields=("plan", "plan_expires_on", "updated_at"))
-        AuditLog.objects.create(
-            actor=request.user,
-            action="payment_recorded",
-            target_type="Payment",
-            target_id=str(payment.id),
-            after={"business": business.name, "plan": plan, "amount_paise": amount, "status": payment.status},
-        )
-        return Response({"id": str(payment.id), "status": payment.status, "subscription_id": str(subscription.id)}, status=status.HTTP_201_CREATED)
 
 
 
@@ -968,24 +928,6 @@ class OwnerHoursView(APIView):
             BusinessHour.objects.update_or_create(business=business, dow=dow, defaults={"opens": opens, "closes": closes, "closed": closed})
         return Response([{"dow": dow, "opens": o and o.strftime("%H:%M"), "closes": c and c.strftime("%H:%M"), "closed": cl}
                          for dow, (o, c, cl) in sorted(cleaned.items())])
-
-
-class OwnerInvoicesView(APIView):
-    permission_classes = (permissions.IsAuthenticated,)
-
-    def get(self, request):
-        invoices = Invoice.objects.filter(
-            payment__subscription__business__members__user=request.user
-        ).select_related("payment__subscription__business").order_by("-issued_on").distinct()
-        return Response([{
-            "number": invoice.number,
-            "issued_on": invoice.issued_on,
-            "business": invoice.payment.subscription.business.name,
-            "plan": invoice.payment.subscription.plan,
-            "amount_paise": invoice.payment.amount_paise,
-            "gst_paise": invoice.payment.gst_paise,
-            "method": invoice.payment.method,
-        } for invoice in invoices])
 
 
 class PreferencesView(APIView):

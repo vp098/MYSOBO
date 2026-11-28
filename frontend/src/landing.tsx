@@ -10,14 +10,14 @@ import { useT, type MessageKey } from "./i18n";
 import { apiGet, type PortalUser } from "./services/api";
 import { ROUTES } from "./session";
 
-type PublicPlans = { gst_percent: number; plans: { plan: "free" | "pro" | "premium"; monthly_price: number; monthly_total: number }[] };
+type PublicPlans = { gst_percent: number; plans: { plan: "free" | "pro" | "premium"; monthly_price: number; monthly_total: number; max_photos: number; max_active_offers: number }[] };
 
 const ORBIT_OUTER: LucideIcon[] = [HeartPulse, GraduationCap, Wrench, Scissors];
 const ORBIT_INNER: LucideIcon[] = [ShoppingBasket, Cake, Store];
 const FEATURES: Record<string, MessageKey[]> = {
-  free: ["od.feat.free1", "od.feat.free2", "od.feat.free3"],
-  pro: ["od.feat.pro1", "od.feat.pro2", "od.feat.pro3", "od.feat.pro4"],
-  premium: ["od.feat.prem1", "od.feat.prem2", "od.feat.prem3", "od.feat.prem4"],
+  free: ["od.feat.free1", "od.feat.free3"],
+  pro: ["od.feat.pro1", "od.feat.pro3", "od.feat.pro4"],
+  premium: ["od.feat.prem1", "od.feat.prem3", "od.feat.prem4"],
 };
 
 /** Circular brand mark: the MySobo leaf at the centre, local services and shops circling it. */
@@ -141,7 +141,11 @@ export function Landing({ user, onAuthChange }: { user?: PortalUser; onAuthChang
                 <h3>{t(`od.plan.${plan.plan}` as MessageKey)}</h3>
                 <p className="landPrice"><b>₹{money(plan.monthly_price)}</b><span>/ {t("od.month")}</span></p>
                 <p className="landGst">{plan.monthly_price ? t("land.withGst", { total: money(plan.monthly_total), gst: pricing.gst_percent }) : t("land.freeForever")}</p>
-                <ul>{(FEATURES[plan.plan] ?? []).map((key) => <li key={key}><BadgeCheck size={16} />{t(key)}</li>)}</ul>
+                <ul>
+                  <li><BadgeCheck size={16} />{t("lim.photos", { n: plan.max_photos })}</li>
+                  <li><BadgeCheck size={16} />{t("lim.offers", { n: plan.max_active_offers })}</li>
+                  {(FEATURES[plan.plan] ?? []).map((key) => <li key={key}><BadgeCheck size={16} />{t(key)}</li>)}
+                </ul>
               </article>
             ))}
           </div>

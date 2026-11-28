@@ -1,6 +1,6 @@
 import { useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
-import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard } from "./ownerFlows";
+import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard, OwnerInvoices } from "./ownerFlows";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
 import { PhotoLibrary } from "./photos";
@@ -24,7 +24,7 @@ import { LeafMark } from "./logo";
 export type PlanKey = "free" | "pro" | "premium";
 type ListingState = "live" | "waiting" | "draft";
 export type OwnerPlans = {
-  plans: { plan: string; monthly_price: number }[];
+  plans: { plan: string; monthly_price: number; max_photos: number; max_active_offers: number }[];
   subscriptions: { id: string; business_id: string; plan: string; status: string; expires_on: string | null }[];
   requests: { id?: string; business_id: string; requested_plan: string; status: string; created_at?: string }[];
 };
@@ -263,7 +263,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           {active.path === "businesses" && <MyBusinesses {...data} />}
           {active.path === "add" && <OnboardingWizard {...data} />}
           {active.path === "approvals" && <ApprovalRequests {...data} />}
-          {active.path === "invoices" && <><PageHead title={t("r3.invoices")} copy={t("inv.copy")} /><Invoices /></>}
+          {active.path === "invoices" && <><PageHead title={t("r3.invoices")} copy={t("inv.copy")} /><OwnerInvoices /></>}
           {active.path === "photos" && <PhotoLibrary owned={owned} />}
           {active.path === "verify" && <VerifyListing />}
           {active.path === "offers" && <OffersManager {...data} />}
@@ -998,9 +998,9 @@ function BusinessExtras({ business, perform }: { business: Business; perform: Pe
 /* ---------- Plans ---------- */
 
 const PLAN_FEATURES: Record<PlanKey, MessageKey[]> = {
-  free: ["r3.f.free1", "r3.f.free2", "r3.f.free3"],
-  pro: ["r3.f.pro1", "r3.f.pro2", "r3.f.pro3", "r3.f.pro4"],
-  premium: ["r3.f.prem1", "r3.f.prem2", "r3.f.prem3", "r3.f.prem4"],
+  free: ["r3.f.free3"],
+  pro: ["r3.f.pro3", "r3.f.pro4"],
+  premium: ["r3.f.prem4", "r3.f.prem2", "r3.f.prem3"],
 };
 
 function Plans({ owned, plans, perform }: DashData) {
@@ -1010,6 +1010,7 @@ function Plans({ owned, plans, perform }: DashData) {
   const business = owned.find((item) => item.id === selected) ?? owned[0];
   const current = business ? planOf(business) : "free";
   const prices = useMemo(() => Object.fromEntries((plans?.plans ?? []).map((item) => [item.plan, item.monthly_price])), [plans]);
+  const limits = useMemo(() => Object.fromEntries((plans?.plans ?? []).map((item) => [item.plan, item])), [plans]) as Partial<Record<PlanKey, { max_photos: number; max_active_offers: number }>>;
   const pendingFor = (plans?.requests ?? []).find((item) => item.business_id === business?.id && item.status === "pending");
   const nameOf = (id: string) => owned.find((item) => item.id === id)?.name ?? "";
 
@@ -1041,7 +1042,11 @@ function Plans({ owned, plans, perform }: DashData) {
               <p className="odPrice">₹{(price ?? 0).toLocaleString("en-IN")}<small>/{t("od.month")}</small></p>
               <p className="odPlanTag">{t(`od.planTag.${plan}` as MessageKey)}</p>
               {plan === "pro" && <p className="r3Promo">🎉 {t("r3.promo")}</p>}
-              <ul>{PLAN_FEATURES[plan].map((feature) => <li key={feature}><Icon name="live" size={16} />{t(feature)}</li>)}</ul>
+              <ul>
+                {limits[plan] && <li><Icon name="live" size={16} />{t("lim.photos", { n: limits[plan].max_photos })}</li>}
+                {limits[plan] && <li><Icon name="live" size={16} />{t("lim.offers", { n: limits[plan].max_active_offers })}</li>}
+                {PLAN_FEATURES[plan].map((feature) => <li key={feature}><Icon name="live" size={16} />{t(feature)}</li>)}
+              </ul>
               {isCurrent ? <button type="button" className="odBtn ghost odFull" disabled>{t("od.currentlyActive")}</button>
                 : pendingFor?.requested_plan === plan ? <button type="button" className="odBtn ghost odFull" disabled>{t("od.requested")}</button>
                   : <button
@@ -1054,6 +1059,7 @@ function Plans({ owned, plans, perform }: DashData) {
           );
         })}
       </section>
+      <p className="obNote"><Icon name="card" size={16} />{t("inv.howToPay")}</p>
       <PricingTable prices={prices} />
       <section className="odCard">
         <div className="odCardHead"><h2>{t("od.requestHistory")}</h2><span className="odRowMeta">{t("od.requestsCount", { n: plans?.requests.length ?? 0 })}</span></div>
@@ -1068,52 +1074,10 @@ function Plans({ owned, plans, perform }: DashData) {
           </div>
         ) : <p className="mutedText">{t("od.noRequests")}</p>}
       </section>
-      <Invoices />
+      <OwnerInvoices />
     </>
   );
 }
-
-type InvoiceRow = { number: string; issued_on: string; business: string; plan: string; amount_paise: number; gst_paise: number; method: string };
-
-function Invoices() {
-  const { t } = useT();
-  const date = useDate();
-  const { data = [] } = useQuery({ queryKey: ["owner-invoices"], queryFn: () => apiGet<InvoiceRow[]>("/owner/invoices/") });
-  const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-
-  function download(row: InvoiceRow) {
-    const win = window.open("", "_blank", "width=720,height=900");
-    if (!win) return;
-    const esc = (value: string) => value.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch] ?? ch));
-    win.document.write(`<!doctype html><title>${esc(row.number)}</title><body style="font-family:Arial,sans-serif;padding:40px;color:#1A231C">
-      <h1 style="color:#2B7A4B;margin:0">MySobo<span style="color:#F2A33A">.</span></h1><p style="color:#4A544C">Tax invoice</p>
-      <p><b>Invoice:</b> ${esc(row.number)}<br><b>Date:</b> ${esc(row.issued_on)}<br><b>Business:</b> ${esc(row.business)}</p>
-      <table style="width:100%;border-collapse:collapse;margin-top:20px"><tr style="background:#EAF8ED"><th align="left" style="padding:8px">Item</th><th align="right" style="padding:8px">Amount</th></tr>
-      <tr><td style="padding:8px">MySobo ${esc(row.plan)} plan · ${esc(row.method)}</td><td align="right" style="padding:8px">${rupees(row.amount_paise)}</td></tr>
-      <tr><td style="padding:8px">GST</td><td align="right" style="padding:8px">${rupees(row.gst_paise)}</td></tr>
-      <tr style="border-top:2px solid #2B7A4B"><td style="padding:8px"><b>Total</b></td><td align="right" style="padding:8px"><b>${rupees(row.amount_paise + row.gst_paise)}</b></td></tr></table>
-      <script>window.print()</script></body>`);
-    win.document.close();
-  }
-
-  return (
-    <section className="odCard">
-      <div className="odCardHead"><h2>{t("r3.invoices")}</h2></div>
-      {data.length ? (
-        <div className="odTableWrap">
-          <table className="odTable">
-            <thead><tr><th>{t("r3.invoiceNo")}</th><th>{t("owner.business")}</th><th>{t("od.submitted")}</th><th>{t("r3.amount")}</th><th aria-label={t("r3.download")} /></tr></thead>
-            <tbody>{data.map((row) => (
-              <tr key={row.number}><td><code>{row.number}</code></td><td>{row.business}</td><td>{date(row.issued_on)}</td><td>{rupees(row.amount_paise + row.gst_paise)}</td>
-                <td><button type="button" className="odBtn outline small" onClick={() => download(row)}>{t("r3.download")}</button></td></tr>
-            ))}</tbody>
-          </table>
-        </div>
-      ) : <p className="mutedText">{t("r3.noInvoices")}</p>}
-    </section>
-  );
-}
-
 
 /* ---------- Plan comparison table ---------- */
 type Cell = "inc" | "no" | MessageKey;
@@ -1131,8 +1095,19 @@ const COMPARE: { key: MessageKey; cells: [Cell, Cell, Cell] }[] = [
   { key: "pt.analytics", cells: ["pt.v.basic", "pt.v.full", "pt.v.fullReport"] },
 ];
 
-export function PricingTable({ prices }: { prices?: Record<string, number> }) {
+type PublicPlanRow = { plan: PlanKey; monthly_price: number; max_photos: number; max_active_offers: number };
+
+export function PricingTable({ prices: given }: { prices?: Record<string, number> }) {
   const { t } = useT();
+  // Prices and limits come from the database (admin-editable), so this table never promises more than the server allows.
+  const { data } = useQuery({ queryKey: ["public-plans"], queryFn: () => apiGet<{ plans: PublicPlanRow[] }>("/plans/") });
+  const rows = Object.fromEntries((data?.plans ?? []).map((row) => [row.plan, row])) as Partial<Record<PlanKey, PublicPlanRow>>;
+  const prices = given ?? Object.fromEntries((data?.plans ?? []).map((row) => [row.plan, row.monthly_price]));
+  const dynamic: Partial<Record<MessageKey, (plan: PlanKey) => string>> = {
+    "pt.photos": (plan) => rows[plan] ? t("pt.v.upTo", { n: rows[plan]!.max_photos }) : "–",
+    "pt.offers": (plan) => rows[plan] ? t("pt.v.activeN", { n: rows[plan]!.max_active_offers }) : "–",
+  };
+  const plansInOrder: PlanKey[] = ["free", "pro", "premium"];
   const price = (plan: PlanKey, fallback: number) => `₹${(prices?.[plan] ?? fallback).toLocaleString("en-IN")}${plan === "free" ? "" : ` / ${t("pt.mo")}`}`;
   const cell = (value: Cell) => value === "inc"
     ? <span className="ptInc"><Icon name="live" size={16} />{t("pt.included")}</span>
@@ -1156,9 +1131,10 @@ export function PricingTable({ prices }: { prices?: Record<string, number> }) {
             {COMPARE.map((row) => (
               <tr key={row.key}>
                 <th scope="row">{t(row.key)}</th>
-                <td>{cell(row.cells[0])}</td>
-                <td className="ptPro">{cell(row.cells[1])}</td>
-                <td>{cell(row.cells[2])}</td>
+                {plansInOrder.map((plan, index) => {
+                  const text = dynamic[row.key];
+                  return <td key={plan} className={plan === "pro" ? "ptPro" : undefined}>{text ? <span>{text(plan)}</span> : cell(row.cells[index])}</td>;
+                })}
               </tr>
             ))}
           </tbody>
