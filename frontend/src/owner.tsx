@@ -1,4 +1,5 @@
 import { useScrollMainToTop } from "./dashboard";
+import { MyTickets } from "./support";
 import { ThemePicker } from "./theme";
 import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard, OwnerInvoices } from "./ownerFlows";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -1199,6 +1200,11 @@ function Help() {
   return (
     <>
       <PageHead title={t("od.nav.help")} copy={t("od.helpCopy")} />
+      <section className="odCard">
+        <div className="odCardHead"><h2>{t("sp.mineTab")}</h2></div>
+        <p className="odSmall">{t("sp.helpHint")}</p>
+        <MyTickets />
+      </section>
       <section className="odCard odFaq">
         {faqs.map(([q, a]) => <details key={q}><summary>{t(q)}</summary><p>{t(a)}</p></details>)}
       </section>

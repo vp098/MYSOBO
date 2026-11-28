@@ -6,6 +6,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 from accounts.views import DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
+from support.views import AdminTicketActionView, AdminTicketsView, TicketDetailView, TicketReplyView, TicketsView
 from billing.views import AdminInvoicePayView, AdminInvoicesView, BillingCronView, InvoicePdfView, OwnerInvoicesView
 from directory.portal_views import (
     AdminAuditView,
@@ -63,6 +64,11 @@ urlpatterns = [
     path("api/owner/posts/<uuid:post_id>/", OwnerPostDetailView.as_view(), name="owner-post-detail"),
     path("api/me/avatar/", AvatarView.as_view(), name="me-avatar"),
     path("api/plans/", PublicPlansView.as_view(), name="public-plans"),
+    path("api/support/tickets/", TicketsView.as_view(), name="support-tickets"),
+    path("api/support/tickets/<uuid:ticket_id>/", TicketDetailView.as_view(), name="support-ticket"),
+    path("api/support/tickets/<uuid:ticket_id>/reply/", TicketReplyView.as_view(), name="support-ticket-reply"),
+    path("api/admin/tickets/", AdminTicketsView.as_view(), name="admin-tickets"),
+    path("api/admin/tickets/<uuid:ticket_id>/", AdminTicketActionView.as_view(), name="admin-ticket-action"),
     path("api/invoices/<uuid:invoice_id>/pdf/", InvoicePdfView.as_view(), name="invoice-pdf"),
     path("api/admin/invoices/", AdminInvoicesView.as_view(), name="admin-invoices"),
     path("api/admin/invoices/<uuid:invoice_id>/pay/", AdminInvoicePayView.as_view(), name="admin-invoice-pay"),

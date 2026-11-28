@@ -8,6 +8,7 @@ import { IconBadge } from "./iconBadge";
 import { LANGUAGES, useT } from "./i18n";
 import { ROUTES } from "./session";
 import { ThemePicker } from "./theme";
+import { MyTickets } from "./support";
 
 /** Resident dashboard at /sobo/resident/*. Phase F adds search, offers, tickets and activity. */
 export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
@@ -27,6 +28,7 @@ export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; o
 
   const items: DashItem[] = [
     { path: "saved", label: t("nav.saved"), icon: "heart" },
+    { path: "support", label: t("sp.title"), icon: "help" },
     { path: "settings", label: t("cd.settings"), icon: "gear" },
   ];
   const active = items.some((item) => item.path === section) ? section : "saved";
@@ -48,6 +50,7 @@ export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; o
         <div className="odMain">
           {active === "saved" && <Saved />}
           {active === "settings" && <Settings user={user} />}
+          {active === "support" && <section className="odCard"><h2>{t("sp.mineTab")}</h2><p className="odSmall">{t("sp.helpHint")}</p><MyTickets /></section>}
         </div>
       </div>
     </Shell>

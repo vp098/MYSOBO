@@ -38,6 +38,7 @@ import { ME_KEY, ROUTES, useMe, type LoginResult } from "./session";
 import { useApplyTheme } from "./theme";
 import { ResidentDashboard } from "./resident";
 import { Landing } from "./landing";
+import { SupportChat } from "./support";
 
 export function Shell({
   children,
@@ -119,6 +120,7 @@ export function Shell({
       {logoutError && <p className="formError topError">{logoutError}</p>}
       <main>{children}</main>
       {bottomNav === undefined ? <ResidentTabbar /> : bottomNav}
+      <SupportChat user={user} />
       {(params.get("dialog") === "login" || params.get("dialog") === "signup") && (
         <LoginDialog onClose={closeLogin} onSuccess={loginComplete} startWith={params.get("dialog") === "signup" ? "signup" : "login"} accountType={params.get("as") === "owner" ? "business_owner" : "resident"} />
       )}
