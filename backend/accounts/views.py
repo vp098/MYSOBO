@@ -300,6 +300,9 @@ class GoogleLoginView(APIView):
             profile.consent_version = "google-signin"
             profile.save(update_fields=("consent_at", "consent_version"))
 
+        from .admin_bootstrap import ensure_bootstrap_superadmin
+
+        ensure_bootstrap_superadmin(user, email)
         identity.email = email
         identity.email_verified = True
         identity.name = full_name

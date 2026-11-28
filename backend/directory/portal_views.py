@@ -15,6 +15,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from mysobo.uploads import uploads_unavailable
+
 from accounts.models import AdminRole, Profile
 from accounts.sessions import home_for, is_super_admin, refresh_session, sign_out
 from django.utils.decorators import method_decorator
@@ -256,6 +258,9 @@ class AvatarView(APIView):
 
     def post(self, request):
         from .photo_views import PhotoError, clean_image
+        blocked = uploads_unavailable()
+        if blocked:
+            return blocked
 
         upload = request.FILES.get("file")
         if not upload:

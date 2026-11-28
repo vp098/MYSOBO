@@ -19,6 +19,8 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from mysobo.uploads import uploads_unavailable
+
 from .models import Business, BusinessPhoto
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -134,6 +136,9 @@ class OwnerPhotosView(APIView):
         return library_response(request, owned_business(request, business_id))
 
     def post(self, request, business_id):
+        blocked = uploads_unavailable()
+        if blocked:
+            return blocked
         files = request.FILES.getlist("files")
         if not files:
             return Response({"detail": "Choose at least one image.", "code": "invalid"}, status=status.HTTP_400_BAD_REQUEST)
@@ -183,6 +188,9 @@ class OwnerPhotoDetailView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def put(self, request, business_id, photo_id):
+        blocked = uploads_unavailable()
+        if blocked:
+            return blocked
         upload = request.FILES.get("file")
         if not upload:
             return Response({"detail": "Choose an image.", "code": "invalid"}, status=status.HTTP_400_BAD_REQUEST)

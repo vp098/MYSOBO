@@ -362,7 +362,13 @@ supabase_storage_missing = [
     name for name, value in supabase_storage_values.items() if not value
 ]
 
-if supabase_storage_configured or (not DEBUG and not IS_CI):
+# With none of the Storage settings in production, the site still starts:
+# uploads answer 503 "not set up yet" (MEDIA_UPLOADS_ENABLED = False) instead
+# of the whole backend failing. A partial or wrong configuration still stops
+# startup so mistakes are caught.
+MEDIA_UPLOADS_ENABLED = bool(DEBUG or IS_CI or supabase_storage_configured)
+
+if supabase_storage_configured:
     if supabase_storage_missing:
         raise ImproperlyConfigured(
             "Supabase media storage is missing required settings: "
@@ -507,6 +513,12 @@ CRON_SECRET = env("CRON_SECRET", "") or ""
 # MySobo signs people in with Google only. Email/password, mobile OTP and the
 # preview demo login stay switched off unless this is set (local testing only).
 ALLOW_PASSWORD_LOGIN = env_bool("ALLOW_PASSWORD_LOGIN", False)
+
+# Initial Super Admin(s): Google accounts (verified email) that become Super
+# Admin when they sign in. Server-side only; comma separated.
+SUPERADMIN_EMAILS = {
+    email.strip().lower() for email in (env("SUPERADMIN_EMAILS", "") or "").split(",") if email.strip()
+}
 
 # Seller details printed on invoices. Without a GSTIN the PDF says "INVOICE", not "TAX INVOICE".
 INVOICE_SELLER_NAME = env("INVOICE_SELLER_NAME", "MySobo") or "MySobo"
