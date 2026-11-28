@@ -235,10 +235,25 @@ if DATABASE_URL:
                 ),
             )
         }
+        # Serverless functions must not use Supabase's *session* pooler
+        # (port 5432 on *.pooler.supabase.com): it allows only pool_size clients
+        # (15) and every warm function instance keeps one, so it fills up
+        # ("EMAXCONNSESSION max clients reached") and the whole API fails.
+        # In production the same host is used in transaction mode (port 6543),
+        # which serves many clients. DB_SESSION_POOLER=true keeps session mode.
+        use_transaction_pooler = parsed.port == 6543 or env_bool("DB_TRANSACTION_POOLER", False)
+        if (
+            not DEBUG
+            and (parsed.hostname or "").endswith(".pooler.supabase.com")
+            and (parsed.port or 5432) == 5432
+            and not env_bool("DB_SESSION_POOLER", False)
+        ):
+            DATABASES["default"]["PORT"] = 6543
+            use_transaction_pooler = True
         # Supabase's transaction pooler (port 6543, Supavisor/PgBouncer) hands each
         # transaction to any server connection: no server-side cursors or
         # prepared statements can survive between transactions.
-        if parsed.port == 6543 or env_bool("DB_TRANSACTION_POOLER", False):
+        if use_transaction_pooler:
             DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
             DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 

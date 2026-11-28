@@ -1377,3 +1377,22 @@ class ManagementTests(TestCase):
         self.assertEqual(self.client.patch(url, {"active": True}, format="json").status_code, 403)
         overview = self.staff.get("/api/admin/overview/").json()
         self.assertEqual((overview["businesses"]["services"], overview["businesses"]["products"]), (1, 1))
+
+
+
+class DatabaseDownTests(TestCase):
+    def test_database_failure_in_middleware_returns_json_503(self):
+        from unittest import mock
+        from django.db import OperationalError
+        from accounts.middleware import PostgreSQLRLSContextMiddleware
+        from django.test import RequestFactory
+        middleware = PostgreSQLRLSContextMiddleware(lambda request: None)
+        request = RequestFactory().get("/api/plans/")
+        with mock.patch("accounts.middleware.connection") as fake:
+            fake.vendor = "postgresql"
+            fake.cursor.side_effect = OperationalError("max clients reached")
+            with mock.patch("accounts.middleware.transaction.atomic"):
+                response = middleware(request)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(b"database_unavailable", response.content)
+        self.assertNotIn(b"max clients", response.content)
