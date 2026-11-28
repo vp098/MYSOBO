@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { loginPath } from "./auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, Send, X } from "lucide-react";
 import { apiGet, apiPost, type Business, type PortalUser } from "./services/api";
@@ -212,7 +213,8 @@ function NewRequest({ onCreated }: { onCreated: (ticket: Ticket) => void }) {
 /** Floating help button and chat panel, on every page for residents and owners. */
 export function SupportChat({ user }: { user?: PortalUser }) {
   const { t } = useT();
-  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"new" | "mine">("new");
   const [created, setCreated] = useState<Ticket | null>(null);
@@ -226,9 +228,7 @@ export function SupportChat({ user }: { user?: PortalUser }) {
   if (user?.is_superadmin) return null;
 
   function login() {
-    const next = new URLSearchParams(params);
-    next.set("dialog", "login");
-    setParams(next);
+    navigate(loginPath(`${location.pathname}${location.search}`));
   }
 
   return (
@@ -311,5 +311,70 @@ export function AdminTickets() {
         </section>
       </div>
     </>
+  );
+}
+
+
+/** Help page form: plan, topic, subject and description in one place. Creates a real ticket. */
+export function TicketForm({ onCreated }: { onCreated?: (ticket: Ticket) => void }) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<"idle" | "sending" | "done">("idle");
+  const [error, setError] = useState("");
+  const [created, setCreated] = useState<Ticket | null>(null);
+  const [formKey, setFormKey] = useState(0);
+  const { data: owned = [] } = useQuery({ queryKey: ["owner-businesses"], queryFn: () => apiGet<Business[]>("/owner/businesses/") });
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setState("sending");
+    setError("");
+    try {
+      const ticket = await apiPost<Ticket>("/support/tickets/", {
+        plan: form.get("plan"), category: form.get("category"),
+        subject: form.get("subject"), description: form.get("description"),
+        business_id: form.get("business_id") || undefined,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["my-tickets"] });
+      setCreated(ticket);
+      setState("done");
+      setFormKey((key) => key + 1);
+      onCreated?.(ticket);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("err.request"));
+      setState("idle");
+    }
+  }
+
+  return (
+    <section className="odCard tkCard" aria-labelledby="tk-title">
+      <h2 id="tk-title">{t("tk.title")}</h2>
+      <p className="odSmall">{t("sp.replyTime")}</p>
+      {state === "done" && created && <p className="successMessage" role="status">{t("sp.created", { code: created.code })}</p>}
+      <form key={formKey} className="spForm tkForm" onSubmit={submit}>
+        <label>{t("sp.askPlan")}
+          <select name="plan" required defaultValue="">
+            <option value="" disabled>{t("tk.choose")}</option>
+            {PLANS.map((value) => <option key={value} value={value}>{t(`sp.plan.${value}` as MessageKey)}</option>)}
+          </select>
+        </label>
+        <label>{t("tk.category")}
+          <select name="category" required defaultValue="">
+            <option value="" disabled>{t("tk.choose")}</option>
+            {CATEGORIES.map((value) => <option key={value} value={value}>{t(`sp.cat.${value}` as MessageKey)}</option>)}
+          </select>
+        </label>
+        {owned.length > 0 && (
+          <label className="tkWide">{t("owner.business")}
+            <select name="business_id" defaultValue={owned.length === 1 ? owned[0].id : ""}><option value="">{t("sp.noListing")}</option>{owned.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          </label>
+        )}
+        <label className="tkWide">{t("sp.subject")}<input name="subject" required minLength={4} maxLength={150} placeholder={t("tk.subjectPh")} /></label>
+        <label className="tkWide">{t("tk.description")}<textarea name="description" required minLength={10} maxLength={4000} rows={5} placeholder={t("tk.descriptionPh")} /></label>
+        {error && <p className="formError tkWide" role="alert">{error}</p>}
+        <div className="tkWide tkActions"><button type="submit" className="odBtn" disabled={state === "sending"}><Send size={15} />{state === "sending" ? t("tk.sending") : t("tk.submit")}</button></div>
+      </form>
+    </section>
   );
 }

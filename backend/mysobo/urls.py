@@ -5,8 +5,9 @@ from directory.photo_views import OwnerPhotoDetailView, OwnerPhotoOrderView, Own
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
-from accounts.views import DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
+from accounts.views import AuthConfigView, DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
 from support.views import AdminTicketActionView, AdminTicketsView, TicketDetailView, TicketReplyView, TicketsView
+from directory.views import SearchSuggestView
 from directory.insights import AdminOverviewView, AdminUsersView, MyActivityView, MyProfileView, OffersFeedView
 from billing.views import AdminInvoicePayView, AdminInvoicesView, BillingCronView, InvoicePdfView, OwnerInvoicesView
 from directory.portal_views import (
@@ -65,6 +66,8 @@ urlpatterns = [
     path("api/owner/posts/<uuid:post_id>/", OwnerPostDetailView.as_view(), name="owner-post-detail"),
     path("api/me/avatar/", AvatarView.as_view(), name="me-avatar"),
     path("api/plans/", PublicPlansView.as_view(), name="public-plans"),
+    path("api/auth/config/", AuthConfigView.as_view(), name="auth-config"),
+    path("api/search/suggest/", SearchSuggestView.as_view(), name="search-suggest"),
     path("api/offers/", OffersFeedView.as_view(), name="offers-feed"),
     path("api/me/activity/", MyActivityView.as_view(), name="me-activity"),
     path("api/me/profile/", MyProfileView.as_view(), name="me-profile"),

@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.exceptions import ValidationError as APIValidationError
 
@@ -26,6 +27,7 @@ from .models import (
     SavedBusiness,
     Subcategory,
 )
+from .search import apply_search, words_of
 from .permissions import IsAdminOrMember, IsSuperAdmin, is_super_admin
 from .serializers import (
     BusinessSerializer,
@@ -525,45 +527,13 @@ class BusinessViewSet(viewsets.ModelViewSet):
             qs = qs.filter(hidden=False)
         query = search_text(self.request)
         if query:
-            matching_products = BusinessProduct.objects.filter(
-                business_id=OuterRef("pk"), active=True, available=True
-            ).filter(
-                Q(name__icontains=query)
-                | Q(brand__icontains=query)
-                | Q(model__icontains=query)
-                | Q(description__icontains=query)
-                | Q(category__name__icontains=query)
-                | Q(subcategory__name__icontains=query)
-            )
-            matching_services = BusinessService.objects.filter(
-                business_id=OuterRef("pk"), active=True, available=True
-            ).filter(
-                Q(name__icontains=query)
-                | Q(description__icontains=query)
-                | Q(service_area__icontains=query)
-                | Q(category__name__icontains=query)
-                | Q(subcategory__name__icontains=query)
-            )
-            qs = qs.annotate(
-                _matches_product=Exists(matching_products),
-                _matches_service=Exists(matching_services),
-            )
             # Searching by phone number only for signed-in users, so the
             # search box cannot be used to look up hidden numbers.
             phone_match = (
                 Q(phone__icontains=query) | Q(whatsapp__icontains=query)
-                if self.request.user.is_authenticated else Q(pk__in=[])
+                if self.request.user.is_authenticated and any(ch.isdigit() for ch in query) else None
             )
-            qs = qs.filter(
-                Q(name__icontains=query)
-                | Q(description__icontains=query)
-                | Q(address__icontains=query)
-                | phone_match
-                | Q(category__name__icontains=query)
-                | Q(subcategory__name__icontains=query)
-                | Q(_matches_product=True)
-                | Q(_matches_service=True)
-            )
+            qs, _, _ = apply_search(qs, query, extra_match=phone_match)
         location = self.request.query_params.get("location")
         if location:
             qs = qs.filter(Q(address__icontains=location) | Q(society__name__icontains=location))
@@ -614,8 +584,9 @@ class BusinessViewSet(viewsets.ModelViewSet):
         if category_id:
             qs = qs.filter(category_id=category_id, category__active=True)
         qs = apply_category_field_filters(qs, self.request, kind)
-        ordering = self.request.query_params.get("ordering", "recent")
+        ordering = self.request.query_params.get("ordering") or ("search" if query else "recent")
         ordering_fields = {
+            "search": ("-_search_rank", "-verification_level", "-created_at"),
             "relevance": ("-verification_level", "-created_at"),
             "rating": ("-average_rating", "-review_count", "-created_at"),
             "recent": ("-created_at",),
@@ -751,3 +722,34 @@ class BusinessViewSet(viewsets.ModelViewSet):
             return Response({"saved": True})
         SavedBusiness.objects.filter(business=business, user=request.user).delete()
         return Response({"saved": False})
+
+
+
+class SearchSuggestView(APIView):
+    """Instant suggestions for the search box: matching listings and categories. GET ?q=&kind="""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        query = search_text(request)
+        if len(query) < 2:
+            return Response({"businesses": [], "categories": [], "words": []})
+        qs = Business.objects.filter(hidden=False, deleted_at__isnull=True).select_related("category", "subcategory", "society")
+        kind = request.query_params.get("kind")
+        if kind in ("service", "product"):
+            qs = qs.filter(kind__in=(kind, "both"))
+        qs, used, corrected = apply_search(qs, query)
+        businesses = [{
+            "slug": item.slug, "name": item.name, "kind": item.kind,
+            "category": item.category.name if item.category_id else "",
+            "subcategory": item.subcategory.name if item.subcategory_id else "",
+            "verified": item.verification_level >= 2,
+        } for item in qs[:6]]
+        category_q = Q()
+        for word in used:
+            category_q |= Q(name__icontains=word)
+        categories = [{"slug": item.slug, "name": item.name, "kind": "service" if item.supports_services else "product"}
+                      for item in Category.objects.filter(category_q, active=True).order_by("priority", "name")[:4]] if used else []
+        subs = [{"slug": item.slug, "name": item.name, "category": item.category.name, "category_slug": item.category.slug}
+                for item in Subcategory.objects.filter(category_q, active=True, approved=True).select_related("category").order_by("priority", "name")[:4]] if used else []
+        return Response({"businesses": businesses, "categories": categories, "subcategories": subs, "words": used, "corrected": corrected})

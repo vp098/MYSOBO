@@ -11,6 +11,7 @@ from .models import OTPChallenge, Profile, User
 from .otp import send_login_otp
 
 
+@override_settings(ALLOW_PASSWORD_LOGIN=True)
 class OTPAuthTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -187,6 +188,7 @@ class GoogleLoginTests(TestCase):
         self.assertEqual(response.status_code, 503)
 
 
+@override_settings(ALLOW_PASSWORD_LOGIN=True)
 class DemoEmailLoginTests(TestCase):
     def setUp(self):
         from django.core.cache import cache
@@ -226,6 +228,7 @@ class DemoEmailLoginTests(TestCase):
         self.assertFalse(Token.objects.filter(user__in=[staff, admin]).exists())
 
 
+@override_settings(ALLOW_PASSWORD_LOGIN=True)
 class EmailPasswordAuthTests(TestCase):
     def setUp(self):
         from django.core.cache import cache
@@ -318,3 +321,62 @@ class EmailPasswordAuthTests(TestCase):
             self.assertEqual(self.register(email="demo@example.com").status_code, 201)
         user.refresh_from_db()
         self.assertTrue(user.check_password("Neem-leaf-2026"))
+
+
+
+class GoogleOnlyTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+        self.claims = {
+            "aud": "test-client.apps.googleusercontent.com", "iss": "https://accounts.google.com",
+            "exp": str(int(__import__("time").time()) + 600), "email": "new@gmail.com", "email_verified": "true",
+            "sub": "g-42", "given_name": "Mira", "family_name": "Desai", "name": "Mira Desai", "picture": "https://lh3.googleusercontent.com/a/x",
+        }
+
+    def login(self, claims, **body):
+        from unittest import mock
+        with override_settings(GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.com"), \
+                mock.patch("accounts.google.fetch_token_info", return_value=claims):
+            return self.client.post("/api/auth/google/", {"credential": "x" * 40, **body}, format="json")
+
+    def test_new_user_gets_identity_profile_and_chosen_role(self):
+        from accounts.models import Profile, SocialIdentity
+        response = self.login(self.claims, account_type="business_owner")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(response.json()["new"])
+        self.assertEqual(response.json()["home"], "/sobo/business-owner")
+        identity = SocialIdentity.objects.get(subject="g-42")
+        self.assertEqual((identity.email, identity.name, identity.provider), ("new@gmail.com", "Mira Desai", "google"))
+        self.assertEqual(Profile.objects.get(id=identity.user).account_type, "business_owner")
+
+    def test_returning_user_matched_by_google_id_even_if_email_changes(self):
+        first = self.login(self.claims)
+        self.client.post("/api/auth/logout/")
+        again = self.login({**self.claims, "email": "mira.new@gmail.com"}, account_type="business_owner")
+        self.assertFalse(again.json()["new"])
+        self.assertEqual(User.objects.filter(identities__subject="g-42").count(), 1)
+        self.assertEqual(User.objects.count(), 1)
+        from accounts.models import Profile
+        self.assertEqual(Profile.objects.get().account_type, "resident")  # role is only chosen at sign-up
+        self.assertEqual(first.status_code, 200)
+
+    def test_other_methods_are_off_by_default(self):
+        for path, body in (("/api/auth/email/login/", {"email": "a@b.c", "password": "x"}),
+                           ("/api/auth/email/register/", {"name": "Ab", "email": "a@b.c", "password": "x"}),
+                           ("/api/auth/otp/request/", {"mobile": "9876543210", "consent": True}),
+                           ("/api/auth/demo-email/", {"email": "a@b.c"})):
+            response = self.client.post(path, body, format="json")
+            self.assertEqual(response.status_code, 404, path)
+            self.assertEqual(response.json()["code"], "google_only")
+
+    def test_config_endpoint(self):
+        with override_settings(GOOGLE_CLIENT_ID="abc.apps.googleusercontent.com"):
+            data = self.client.get("/api/auth/config/").json()
+        self.assertEqual(data, {"google_client_id": "abc.apps.googleusercontent.com", "google_enabled": True, "password_login": False})
+
+    def test_dashboards_need_sign_in(self):
+        self.assertIn(self.client.get("/api/auth/me/").status_code, (401, 403))
+        self.assertIn(self.client.get("/api/owner/businesses/").status_code, (401, 403))
+        self.assertIn(self.client.get("/api/admin/overview/").status_code, (401, 403))

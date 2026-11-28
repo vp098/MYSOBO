@@ -504,6 +504,10 @@ FRONTEND_URL = env("FRONTEND_URL", "https://mysobo.vercel.app").rstrip("/")
 # Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" to /api/cron/billing/.
 CRON_SECRET = env("CRON_SECRET", "") or ""
 
+# MySobo signs people in with Google only. Email/password, mobile OTP and the
+# preview demo login stay switched off unless this is set (local testing only).
+ALLOW_PASSWORD_LOGIN = env_bool("ALLOW_PASSWORD_LOGIN", False)
+
 # Seller details printed on invoices. Without a GSTIN the PDF says "INVOICE", not "TAX INVOICE".
 INVOICE_SELLER_NAME = env("INVOICE_SELLER_NAME", "MySobo") or "MySobo"
 INVOICE_SELLER_ADDRESS = env("INVOICE_SELLER_ADDRESS", "South Bopal, Ahmedabad, Gujarat") or ""
