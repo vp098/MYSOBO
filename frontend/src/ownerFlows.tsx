@@ -13,8 +13,7 @@ import { ME_KEY, ROUTES } from "./session";
  * offers with edit/delete and dates, and the profile picture.
  */
 
-type PublicPlans = { gst_percent: number; plans: { plan: PlanKey; monthly_price: number; monthly_total: number }[] };
-const FREE_PHOTO_LIMIT = 3; // a new listing starts on Free until a paid plan's payment is recorded
+type PublicPlans = { gst_percent: number; plans: { plan: PlanKey; monthly_price: number; monthly_total: number; max_photos: number; max_active_offers: number }[] };
 const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const to = (path: string) => `${ROUTES.owner}/${path}`;
 
@@ -58,6 +57,8 @@ export function OnboardingWizard({ owned }: DashData) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const { data: pricing } = useQuery({ queryKey: ["public-plans"], queryFn: () => apiGet<PublicPlans>("/plans/") });
+  // A new listing starts on Free until a paid plan's payment is recorded.
+  const FREE_PHOTO_LIMIT = pricing?.plans.find((row) => row.plan === "free")?.max_photos ?? 3;
   const previews = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
   useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
   const total = 5;
@@ -341,7 +342,7 @@ export function OffersManager({ owned, posts, perform }: DashData) {
                 <label>{t("of.starts")}<input name="starts_on" type="date" defaultValue={editing?.starts_on ?? ""} /></label>
                 <label>{t("of.ends")}<input name="expires_on" type="date" min={today} defaultValue={editing?.expires_on ?? ""} /></label>
               </div>
-              <p className="odSmall">{t("of.limitNote")}</p>
+              <p className="odSmall">{t("of.limitNote2")}</p>
               <div className="apActions">
                 <button className="odBtn" type="submit">{editing ? t("of.save") : t("owner.submitOffer")}</button>
                 {editing && <button className="odBtn outline" type="button" onClick={() => setEditing(null)}>{t("of.cancel")}</button>}
@@ -431,5 +432,54 @@ export function AvatarPicker({ user }: { user: PortalUser }) {
         {error && <p className="formError">{error}</p>}
       </div>
     </div>
+  );
+}
+
+
+type OwnerInvoice = {
+  id: string; number: string; business: string; plan: PlanKey; period_start: string; period_end: string;
+  issued_on: string; due_on: string; amount_paise: number; gst_percent: number; gst_paise: number; total_paise: number;
+  status: "pending" | "paid" | "overdue" | "cancelled"; paid_on: string | null; method: string; pdf_url: string;
+};
+
+const INVOICE_BADGE: Record<OwnerInvoice["status"], { cls: string; key: MessageKey }> = {
+  pending: { cls: "wait", key: "inv.s.pending" },
+  paid: { cls: "ok", key: "inv.s.paid" },
+  overdue: { cls: "bad", key: "inv.s.overdue" },
+  cancelled: { cls: "muted", key: "inv.s.cancelled" },
+};
+
+/** Monthly invoices with GST, status and PDF download. */
+export function OwnerInvoices() {
+  const { t } = useT();
+  const date = useDate();
+  const { data = [], isLoading } = useQuery({ queryKey: ["owner-invoices"], queryFn: () => apiGet<OwnerInvoice[]>("/owner/invoices/") });
+  const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
+  const open = data.filter((item) => item.status === "pending" || item.status === "overdue");
+  return (
+    <section className="odCard">
+      <div className="odCardHead"><h2>{t("r3.invoices")}</h2></div>
+      {open.length > 0 && <p className="obNote"><Icon name="clock" size={16} />{t("inv.payNote", { n: open.length, total: rupees(open.reduce((sum, item) => sum + item.total_paise, 0)) })}</p>}
+      {isLoading ? <p className="mutedText">{t("home.finding")}</p> : data.length ? (
+        <div className="odTableWrap">
+          <table className="odTable">
+            <thead><tr><th>{t("inv.number")}</th><th>{t("owner.business")}</th><th>{t("inv.period")}</th><th>{t("inv.total")}</th><th>{t("inv.due")}</th><th>{t("od.status")}</th><th /></tr></thead>
+            <tbody>
+              {data.map((item) => (
+                <tr key={item.id}>
+                  <td><code>{item.number}</code><br /><small className="odRowMeta">{t(`od.plan.${item.plan}` as MessageKey)}</small></td>
+                  <td>{item.business}</td>
+                  <td>{date(item.period_start)} – {date(item.period_end)}</td>
+                  <td>{rupees(item.total_paise)}<br /><small className="odRowMeta">{t("inv.split", { base: rupees(item.amount_paise), gst: rupees(item.gst_paise), pct: item.gst_percent })}</small></td>
+                  <td>{date(item.due_on)}</td>
+                  <td><span className={`odBadge ${INVOICE_BADGE[item.status].cls}`}>{t(INVOICE_BADGE[item.status].key)}</span>{item.paid_on && <><br /><small className="odRowMeta">{date(item.paid_on)}</small></>}</td>
+                  <td><a className="odBtn small outline" href={item.pdf_url}>{t("inv.pdf")}</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="mutedText">{t("r3.noInvoices")}</p>}
+    </section>
   );
 }

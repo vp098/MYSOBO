@@ -6,6 +6,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 from accounts.views import DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
+from billing.views import AdminInvoicePayView, AdminInvoicesView, BillingCronView, InvoicePdfView, OwnerInvoicesView
 from directory.portal_views import (
     AdminAuditView,
     AdminBusinessesView,
@@ -15,7 +16,6 @@ from directory.portal_views import (
     OwnerStatsView,
     HealthView,
     OwnerHoursView,
-    OwnerInvoicesView,
     PreferencesView,
     AdminBusinessImportView,
     AdminBusinessVerifyView,
@@ -63,6 +63,10 @@ urlpatterns = [
     path("api/owner/posts/<uuid:post_id>/", OwnerPostDetailView.as_view(), name="owner-post-detail"),
     path("api/me/avatar/", AvatarView.as_view(), name="me-avatar"),
     path("api/plans/", PublicPlansView.as_view(), name="public-plans"),
+    path("api/invoices/<uuid:invoice_id>/pdf/", InvoicePdfView.as_view(), name="invoice-pdf"),
+    path("api/admin/invoices/", AdminInvoicesView.as_view(), name="admin-invoices"),
+    path("api/admin/invoices/<uuid:invoice_id>/pay/", AdminInvoicePayView.as_view(), name="admin-invoice-pay"),
+    path("api/cron/billing/", BillingCronView.as_view(), name="cron-billing"),
     path("api/owner/plans/", OwnerPlansView.as_view(), name="owner-plans"),
     path("api/admin/dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("api/admin/claims/", AdminClaimsView.as_view(), name="admin-claims"),

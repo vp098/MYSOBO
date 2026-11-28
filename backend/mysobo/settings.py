@@ -498,6 +498,14 @@ REST_FRAMEWORK = {
 # (see frontend/vercel.json), so the cookie is first-party.
 
 FRONTEND_URL = env("FRONTEND_URL", "https://mysobo.vercel.app").rstrip("/")
+
+# Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" to /api/cron/billing/.
+CRON_SECRET = env("CRON_SECRET", "") or ""
+
+# Seller details printed on invoices. Without a GSTIN the PDF says "INVOICE", not "TAX INVOICE".
+INVOICE_SELLER_NAME = env("INVOICE_SELLER_NAME", "MySobo") or "MySobo"
+INVOICE_SELLER_ADDRESS = env("INVOICE_SELLER_ADDRESS", "South Bopal, Ahmedabad, Gujarat") or ""
+INVOICE_SELLER_GSTIN = (env("INVOICE_SELLER_GSTIN", "") or "").strip().upper()
 for _origin in [FRONTEND_URL] + (["http://localhost:4173", "http://127.0.0.1:4173"] if DEBUG else []):
     if _origin and _origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(_origin)

@@ -5,6 +5,7 @@ import { apiGet, apiPost, apiPut, apiUpload, type Business, type PortalUser } fr
 import { BusinessForm, CategoryManager, Shell, categoryDataFromForm } from "./App";
 import { coverFor } from "./covers";
 import { LeafMark } from "./logo";
+import { AdminInvoices, AdminPricing, type AdminPlan } from "./adminBilling";
 import { DashTabbar, useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
 
@@ -18,7 +19,7 @@ type Claim = { id: string; business_id: string; business: string; category: stri
 type AdminBusiness = Business & { owner_name?: string; owner_email?: string };
 type Post = { id: string; business: string; title: string; body: string; status: string; created_at: string };
 type PlanRequest = { id: string; business: string; requested_by: string; requested_plan: string; created_at: string };
-type Plan = { plan: string; monthly_price: number; active: boolean };
+type Plan = AdminPlan;
 type Payment = { id: string; business: string; plan: string; amount_paise: number; gst_paise: number; method: string; status: string; paid_on: string; invoice: string };
 type ReportRow = { id: string; business: string; business_slug: string; reason: string; reporter: string; status: string; created_at: string };
 type AuditRow = { id: number; actor: string; action: string; target_type: string; after: Record<string, unknown> | null; created_at: string };
@@ -48,7 +49,7 @@ const Icon = ({ name, size = 20 }: { name: string; size?: number }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{ICONS[name]}</svg>
 );
 
-const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 const when = (value?: string) => value ? new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
 const isVerified = (business: Business) => !business.hidden && (business.verification_level ?? 0) >= 2;
 
@@ -205,8 +206,8 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "catalog" && <><SaHead title="Products & services" copy="Custom fields per category: label, key, type (text, number, yes/no, choice), show as filter and required. Open a category below and use its fields section." /><section className="odCard"><CategoryManager run={run} /></section></>}
           {active.path === "offers" && <Offers posts={posts} run={run} />}
           {active.path === "plan-requests" && <PlanRequests requests={planRequests} run={run} />}
-          {active.path === "pricing" && <Pricing plans={plans} run={run} />}
-          {active.path === "payments" && <Payments payments={payments} businesses={businesses} run={run} />}
+          {active.path === "pricing" && <AdminPricing plans={plans} run={run} />}
+          {active.path === "payments" && <><AdminInvoices run={run} /><PaymentLedger payments={payments} /></>}
           {active.path === "reports" && <Reports reports={reports} run={run} />}
           {active.path === "audit" && <><SaHead title="Admin activity / audit history" copy="Every approval, rejection, payment and settings change, newest first." /><section className="odCard"><AuditList rows={audit} /></section></>}
           {active.path === "settings" && <><SettingsForm settings={settings} run={run} /><section className="odCard saTheme"><ThemePicker user={user} /></section></>}
@@ -429,7 +430,7 @@ function Offers({ posts, run }: { posts: Post[]; run: Run }) {
 function PlanRequests({ requests, run }: { requests: PlanRequest[]; run: Run }) {
   return (
     <>
-      <SaHead title="Plan & subscription requests" copy="Owners asking to move to Pro or Premium." />
+      <SaHead title="Plan & subscription requests" copy="Approving creates a pending invoice. The plan starts only after you record the payment under Payments & invoices." />
       <section className="odCard">
         {requests.length ? (
           <ul className="saQueue">
@@ -437,7 +438,7 @@ function PlanRequests({ requests, run }: { requests: PlanRequest[]; run: Run }) 
               <li key={item.id}>
                 <div className="saQueueMain"><p className="odRowTitle">{item.business} <span className={`odPlan ${item.requested_plan}`}>{item.requested_plan}</span></p><p className="odRowMeta">Requested by {item.requested_by} · {when(item.created_at)}</p></div>
                 <div className="saActions">
-                  <button type="button" className="saBtn ok" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "approve" }), `${item.business} moved to ${item.requested_plan}.`)}><Icon name="check" size={15} />Approve</button>
+                  <button type="button" className="saBtn ok" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "approve" }), `Approved. A pending ${item.requested_plan} invoice was created for ${item.business}; the plan starts when you record the payment.`)}><Icon name="check" size={15} />Approve</button>
                   <button type="button" className="saBtn dangerOutline" onClick={() => run(() => apiPost("/admin/plan-requests/", { request_id: item.id, decision: "reject" }), "Plan request rejected.")}><Icon name="x" size={15} />Reject</button>
                 </div>
               </li>
@@ -449,70 +450,19 @@ function PlanRequests({ requests, run }: { requests: PlanRequest[]; run: Run }) 
   );
 }
 
-function Pricing({ plans, run }: { plans: Plan[]; run: Run }) {
-  const all = (["free", "pro", "premium"] as const).map((key) => plans.find((p) => p.plan === key) ?? { plan: key, monthly_price: key === "free" ? 0 : key === "pro" ? 499 : 1999, active: true });
+function PaymentLedger({ payments }: { payments: Payment[] }) {
   return (
-    <>
-      <SaHead title="Pricing management" copy="Monthly prices owners see on Plans & billing." />
-      <section className="odPlans">
-        {all.map((plan) => (
-          <form key={plan.plan} className={`odPlanCard ${plan.plan}`} onSubmit={(event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            void run(() => apiPut("/admin/plans/", { plan: plan.plan, monthly_price: Number(form.get("price")), active: form.get("active") === "on" }), `${plan.plan} price saved.`);
-          }}>
-            <div className="odPlanHead"><h2 style={{ textTransform: "capitalize" }}>{plan.plan}</h2></div>
-            <label className="saField">Monthly price (₹)<input name="price" type="number" min="0" step="1" defaultValue={plan.monthly_price} required /></label>
-            <label className="saCheck"><input name="active" type="checkbox" defaultChecked={plan.active} /> Available to owners</label>
-            <button className={`odBtn odFull ${plan.plan === "premium" ? "add" : ""}`} type="submit">Save</button>
-          </form>
-        ))}
-      </section>
-    </>
-  );
-}
-
-function Payments({ payments, businesses, run }: { payments: Payment[]; businesses: AdminBusiness[]; run: Run }) {
-  const [formKey, setFormKey] = useState(0);
-  async function record(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await run(() => apiPost("/admin/payments/", {
-      business_id: form.get("business_id"), plan: form.get("plan"),
-      amount_paise: Math.round(Number(form.get("amount")) * 100), gst_paise: Math.round(Number(form.get("gst") || 0) * 100),
-      method: form.get("method"), gateway_ref: form.get("gateway_ref") || undefined,
-    }), "Payment recorded and invoice created.");
-    setFormKey((key) => key + 1);
-  }
-  return (
-    <>
-      <SaHead title="Payments & invoices" copy="Record UPI, cash or bank payments. An invoice number is created automatically." />
-      <div className="odSplit wideLeft">
-        <section className="odCard">
-          <h2>Payment ledger</h2>
-          {payments.length ? (
-            <div className="odTableWrap">
-              <table className="odTable">
-                <thead><tr><th>Date</th><th>Business</th><th>Plan</th><th>Amount</th><th>GST</th><th>Method</th><th>Invoice</th></tr></thead>
-                <tbody>{payments.map((p) => <tr key={p.id}><td>{when(p.paid_on)}</td><td>{p.business}</td><td>{p.plan}</td><td>{rupees(p.amount_paise)}</td><td>{rupees(p.gst_paise)}</td><td>{p.method}</td><td><code>{p.invoice}</code></td></tr>)}</tbody>
-              </table>
-            </div>
-          ) : <p className="mutedText">No payments recorded yet.</p>}
-        </section>
-        <section className="odCard">
-          <h2>Record a payment</h2>
-          <form key={formKey} className="stackForm" onSubmit={record}>
-            <label>Business<select name="business_id" required defaultValue=""><option value="" disabled>Choose business</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-            <label>Plan<select name="plan" defaultValue="pro"><option value="pro">Pro</option><option value="premium">Premium</option><option value="free">Free</option></select></label>
-            <label>Amount (₹)<input name="amount" type="number" min="0" step="1" required /></label>
-            <label>GST (₹)<input name="gst" type="number" min="0" step="1" defaultValue={0} /></label>
-            <label>Method<select name="method" defaultValue="upi"><option value="upi">UPI</option><option value="cash">Cash</option><option value="bank">Bank transfer</option><option value="card">Card</option></select></label>
-            <label>Gateway / UPI reference<input name="gateway_ref" placeholder="Optional" /></label>
-            <button className="odBtn odFull" type="submit">Record payment</button>
-          </form>
-        </section>
-      </div>
-    </>
+    <section className="odCard">
+      <h2>Payment ledger</h2>
+      {payments.length ? (
+        <div className="odTableWrap">
+          <table className="odTable">
+            <thead><tr><th>Date</th><th>Business</th><th>Plan</th><th>Amount</th><th>GST</th><th>Method</th><th>Invoice</th></tr></thead>
+            <tbody>{payments.map((p) => <tr key={p.id}><td>{when(p.paid_on)}</td><td>{p.business}</td><td>{p.plan}</td><td>{rupees(p.amount_paise)}</td><td>{rupees(p.gst_paise)}</td><td>{p.method}</td><td><code>{p.invoice}</code></td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : <p className="mutedText">No payments recorded yet.</p>}
+    </section>
   );
 }
 

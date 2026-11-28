@@ -27,7 +27,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_EDGE = 2000
 MAX_PIXELS = 40_000_000
 MAX_FILES_PER_REQUEST = 10
-from billing.limits import PHOTO_LIMITS  # noqa: E402  (shared with offers)
+from billing.limits import photo_limit  # noqa: E402
 
 
 class PhotoError(ValueError):
@@ -109,7 +109,7 @@ def library_response(request, business, code=status.HTTP_200_OK, errors=None):
     photos = business.photos.order_by("sort", "created_at")
     body = {
         "photos": PhotoSerializer(photos, many=True, context={"request": request, "business": business}).data,
-        "limit": PHOTO_LIMITS.get(business.plan, 3),
+        "limit": photo_limit(business.plan),
         "plan": business.plan,
     }
     if errors:
@@ -149,7 +149,7 @@ class OwnerPhotosView(APIView):
 
         with transaction.atomic():
             business = owned_business(request, business_id, lock=True)
-            limit = PHOTO_LIMITS.get(business.plan, 3)
+            limit = photo_limit(business.plan)
             existing = business.photos.count()
             room = max(limit - existing, 0)
             if cleaned and room == 0:
