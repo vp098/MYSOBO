@@ -308,6 +308,8 @@ class CivicUpdate(models.Model):
 class SavedBusiness(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     business = models.ForeignKey(Business, on_delete=models.CASCADE)
+    # Empty for saves made before this field existed: their real date is unknown.
+    created_at = models.DateTimeField(null=True, blank=True, default=timezone.now)
 
     class Meta:
         unique_together = ("user", "business")

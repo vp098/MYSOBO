@@ -7,6 +7,7 @@ import { coverFor } from "./covers";
 import { LeafMark } from "./logo";
 import { AdminInvoices, AdminPricing, type AdminPlan } from "./adminBilling";
 import { AdminTickets, type Ticket } from "./support";
+import { AdminOverview, AdminUsers } from "./adminOverview";
 import { DashTabbar, useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
 
@@ -25,9 +26,9 @@ type Payment = { id: string; business: string; plan: string; amount_paise: numbe
 type ReportRow = { id: string; business: string; business_slug: string; reason: string; reporter: string; status: string; created_at: string };
 type AuditRow = { id: number; actor: string; action: string; target_type: string; after: Record<string, unknown> | null; created_at: string };
 type Settings = { grace_period_days: number; free_pro_cap: number; approval_sla_hours: number };
-type Dashboard = { businesses: number; verified: number; pending_approvals: number; pending_claims: number; pending_posts: number; pending_plan_requests: number; pending_reports: number; revenue_paise: number };
 
 const ICONS: Record<string, ReactNode> = {
+  user: <><circle cx="12" cy="8.5" r="3.5" /><path d="M5 19.5c1.2-3.3 3.8-5 7-5s5.8 1.7 7 5" /></>,
   chat: <><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" /></>,
   more: <><circle cx="6" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="18" cy="12" r="1.4" fill="currentColor" /></>,
   grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
@@ -79,7 +80,6 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
   useScrollMainToTop(section);
 
   const q = <T,>(key: string, url: string) => useQuery({ queryKey: [key], queryFn: () => apiGet<T>(url), enabled });
-  const dashboard = q<Dashboard>("admin-dashboard", "/admin/dashboard/").data;
   const businesses = q<AdminBusiness[]>("admin-businesses", "/admin/businesses/").data ?? [];
   const claims = q<Claim[]>("admin-claims", "/admin/claims/").data ?? [];
   const posts = q<Post[]>("admin-posts", "/admin/posts/").data ?? [];
@@ -118,6 +118,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
     { path: "", label: "Overview dashboard", icon: "grid" },
     { path: "verification", label: "Business verification", icon: "shield", badge: pendingApprovals.length + claims.length },
     { path: "businesses", label: "All businesses", icon: "store" },
+    { path: "users", label: "People", icon: "user" },
     { path: "categories", label: "Categories & subcategories", icon: "tree" },
     { path: "catalog", label: "Products & services", icon: "sliders" },
     { path: "offers", label: "Offers & promotions", icon: "tag", badge: pendingPosts.length },
@@ -165,23 +166,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "" && (
             <>
               <header className="saHead"><div><p className="odChip"><Icon name="shield" size={15} />South Bopal · Operations</p><h1>Welcome back{user.name ? `, ${user.name.split(" ")[0]}` : ""}</h1><p className="mutedText">Verify listings, review requests and keep the directory trustworthy.</p></div></header>
-              <section className="odKpis saKpis">
-                {[
-                  { label: "Total businesses", value: dashboard?.businesses, icon: "store", tone: "green", path: "businesses" },
-                  { label: "Verified ✓", value: dashboard?.verified, icon: "check", tone: "green", path: "businesses" },
-                  { label: "Pending verification", value: dashboard?.pending_approvals, icon: "shield", tone: "marigold", path: "verification" },
-                  { label: "Pending listing requests", value: dashboard?.pending_claims, icon: "store", tone: "marigold", path: "verification" },
-                  { label: "Pending offers", value: dashboard?.pending_posts, icon: "tag", tone: "indigo", path: "offers" },
-                  { label: "Pending plan requests", value: dashboard?.pending_plan_requests, icon: "card", tone: "indigo", path: "plan-requests" },
-                  { label: "Open reports", value: dashboard?.pending_reports, icon: "flag", tone: "marigold", path: "reports" },
-                  { label: "Total revenue", value: dashboard ? rupees(dashboard.revenue_paise) : undefined, icon: "rupee", tone: "green", path: "payments" },
-                ].map((tile) => (
-                  <Link key={tile.label} to={to(tile.path)} className="odKpi">
-                    <div className="odKpiTop"><span>{tile.label}</span><span className={`odTileIcon ${tile.tone}`}><Icon name={tile.icon} size={18} /></span></div>
-                    <strong>{tile.value ?? "–"}</strong>
-                  </Link>
-                ))}
-              </section>
+              <AdminOverview base={to} />
               <div className="odSplit">
                 <section className="odCard">
                   <div className="odCardHead"><h2>Needs your attention</h2><Link className="odLink" to={to("verification")}>Open queue</Link></div>
@@ -215,6 +200,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "reports" && <Reports reports={reports} run={run} />}
           {active.path === "audit" && <><SaHead title="Admin activity / audit history" copy="Every approval, rejection, payment and settings change, newest first." /><section className="odCard"><AuditList rows={audit} /></section></>}
           {active.path === "support" && <AdminTickets />}
+          {active.path === "users" && <AdminUsers />}
           {active.path === "settings" && <><SettingsForm settings={settings} run={run} /><section className="odCard saTheme"><ThemePicker user={user} /></section></>}
         </div>
       </div>
