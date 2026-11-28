@@ -17,7 +17,7 @@ import { AvatarPicker } from "./ownerFlows";
 type FeedOffer = { id: string; title: string; body: string; starts_on: string | null; expires_on: string | null; business: { name: string; slug: string; kind: string; category: string } };
 type Activity = { type: "saved" | "review" | "call" | "whatsapp" | "ticket"; at: string; title: string; slug?: string; rating?: number; code?: string; status?: Ticket["status"] };
 
-const to = (path: string) => (path ? `${ROUTES.resident}/${path}` : ROUTES.resident);
+const to = (path: string) => (path === "__services" ? "/services" : path === "__products" ? "/products" : path ? `${ROUTES.resident}/${path}` : ROUTES.resident);
 
 function useDay() {
   const { lang } = useT();
@@ -43,6 +43,8 @@ export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; o
   const items: DashItem[] = [
     { path: "", label: t("rd.home"), icon: "grid" },
     { path: "search", label: t("rd.search"), icon: "search" },
+    { path: "__services", label: t("main.service"), icon: "user" },
+    { path: "__products", label: t("main.product"), icon: "store" },
     { path: "saved", label: t("nav.saved"), icon: "heart" },
     { path: "offers", label: t("rd.offers"), icon: "tag" },
     { path: "activity", label: t("rd.activity"), icon: "clock" },
@@ -55,7 +57,7 @@ export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; o
   return (
     <Shell user={user} onAuthChange={onAuthChange} dashboard
       bottomNav={<DashTabbar label={t("nav.home")} moreLabel={t("od.tab.more")} active={active} to={to}
-        tabs={items.slice(0, 4)} more={items.slice(4)} />}>
+        tabs={[items[0], items[1], items[4], items[5]]} more={[items[2], items[3], ...items.slice(6)]} />}>
       <div className="odLayout">
         <DashSidebar
           label={t("nav.home")}

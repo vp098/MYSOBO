@@ -3,7 +3,14 @@ import { IconBadge } from "./iconBadge";
 import { Heart, LockKeyhole, SearchX } from "lucide-react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+
+// Big screens load on demand, so the first visit downloads less.
+const OwnerDashboard = lazy(() => import("./owner").then((m) => ({ default: m.OwnerDashboard })));
+const SuperAdminDashboard = lazy(() => import("./superadmin").then((m) => ({ default: m.SuperAdminDashboard })));
+const ResidentDashboard = lazy(() => import("./resident").then((m) => ({ default: m.ResidentDashboard })));
+const ListingPage = lazy(() => import("./listing").then((m) => ({ default: m.ListingPage })));
+const BrowseKind = lazy(() => import("./browse").then((m) => ({ default: m.BrowseKind })));
 import {
   apiGet,
   apiPatch,
@@ -25,10 +32,7 @@ import {
 } from "./services/api";
 import { LanguageSwitch, useT, type MessageKey } from "./i18n";
 import { InstallButton, InstallCard } from "./pwa";
-import { OwnerDashboard } from "./owner";
-import { SuperAdminDashboard } from "./superadmin";
 import { coverFor, coverForCategory } from "./covers";
-import { ListingPage } from "./listing";
 import { Onboarding, shouldOnboard } from "./onboarding";
 import { fadeUp, stagger } from "./hub";
 import { motion, useReducedMotion } from "framer-motion";
@@ -37,7 +41,6 @@ import { AccountMenu } from "./accountMenu";
 import { SmartSearch } from "./smartSearch";
 import { ME_KEY, ROUTES, useMe, type LoginResult } from "./session";
 import { useApplyTheme } from "./theme";
-import { ResidentDashboard } from "./resident";
 import { Landing } from "./landing";
 import { SupportChat } from "./support";
 
@@ -134,7 +137,7 @@ function ResidentTabbar() {
   const path = location.pathname;
   const items: { href: string; label: string; icon: ReactNode; active: boolean }[] = [
     { href: "/mysobo", label: t("nav.explore"), active: path === "/mysobo" && location.hash !== "#categories", icon: <><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></> },
-    { href: "/mysobo#categories", label: t("nav.categories"), active: path.startsWith("/services") || path.startsWith("/products") || path.startsWith("/categories") || location.hash === "#categories", icon: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></> },
+    { href: "/services", label: t("nav.categories"), active: path.startsWith("/services") || path.startsWith("/products") || path.startsWith("/categories"), icon: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></> },
     { href: "/sobo/resident/saved", label: t("nav.saved"), active: path === "/sobo/resident/saved", icon: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /> },
     { href: "/sobo/business-owner", label: t("nav.myBusiness"), active: path.startsWith("/sobo/business-owner"), icon: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M5.5 11v8.5h13V11M10 19.5v-4h4v4" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /></> },
   ];
@@ -825,7 +828,8 @@ function CategoryPage({ kind, user, onAuthChange }: {
     item.parent_id === (selectedSubcategory?.id ?? null)
   );
   const breadcrumbs = [
-    { label: t("cat.home"), href: `/mysobo?kind=${kind}` },
+    { label: t("cat.home"), href: "/sobo" },
+    { label: t(kind === "product" ? "main.product" : "main.service"), href: kind === "product" ? "/products" : "/services" },
     { label: category?.name ?? t("cat.category"), href: `${categoryBase}/${categorySlug}` },
     ...selectedChain.map((item, index) => ({
       label: item.name,
@@ -1495,6 +1499,7 @@ export default function App() {
   /** Dashboards wait for the session check so signed-in people never see the guest view flash. */
   const signedInOnly = (page: ReactNode) => (isLoading ? <div className="pageLoading" aria-busy="true" /> : page);
   return (
+    <Suspense fallback={<div className="pageLoading" aria-busy="true" />}>
     <Routes>
       <Route path="/" element={<Navigate to={ROUTES.landing} replace />} />
       <Route path="/sobo" element={<Landing user={user} onAuthChange={authChanged} />} />
@@ -1508,11 +1513,14 @@ export default function App() {
       <Route path="/mysobo/saved" element={<Navigate to={ROUTES.residentSaved} replace />} />
       <Route path="/mysobo/owner/*" element={<MovedTo from="/mysobo/owner" to={ROUTES.owner} />} />
       <Route path="/mysobo/superadmin/*" element={<MovedTo from="/mysobo/superadmin" to={ROUTES.admin} />} />
+      <Route path="/services" element={<BrowseKind kind="service" user={user} onAuthChange={authChanged} />} />
+      <Route path="/products" element={<BrowseKind kind="product" user={user} onAuthChange={authChanged} />} />
       <Route path="/services/:categorySlug/*" element={<CategoryPage kind="service" user={user} onAuthChange={authChanged} />} />
       <Route path="/products/:categorySlug/*" element={<CategoryPage kind="product" user={user} onAuthChange={authChanged} />} />
       <Route path="/categories/:categorySlug/*" element={<CategoryPage kind="all" user={user} onAuthChange={authChanged} />} />
       <Route path="/business/:slug" element={<ListingPage user={user} onAuthChange={authChanged} />} />
       <Route path="*" element={<Navigate to={ROUTES.discover} replace />} />
     </Routes>
+    </Suspense>
   );
 }

@@ -2605,3 +2605,154 @@ button, .button, .smallButton, .statusPill, .subcategoryChip, .kindTabs button, 
   .cxSort span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .cxSide { transition: none; } }
+
+/* ====================================================================
+   Phase 2: Vercel-style business page and Service/Product browsing.
+   Monochrome surfaces, thin borders, green used only for actions/state.
+   ==================================================================== */
+:root { --v-border: var(--outline-variant); --v-muted: var(--on-surface-variant); --v-bg: var(--dash-bg); }
+
+/* ---------- Business detail (/business/:slug) ---------- */
+.lv { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; height: 100%; min-height: 0; background: var(--v-bg); }
+.lvState { display: grid; place-items: center; height: 100%; }
+.lvSide { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding: 16px 12px; border-right: 1px solid var(--v-border); background: var(--card); }
+.lvBack { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 34px; padding: 0 10px 0 4px; border: 1px solid var(--v-border); border-radius: 8px; background: var(--card); color: var(--on-surface); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.lvBack:hover { background: var(--surface-container-high); }
+.lvIdentity { display: flex; align-items: center; gap: 10px; padding: 4px; }
+.lvIdentity b { display: block; font-family: var(--font-ui); font-size: 15px; line-height: 1.25; }
+.lvIdentity small { color: var(--v-muted); font-size: 12.5px; }
+.lvLogo { display: grid; place-items: center; flex: none; width: 40px; height: 40px; overflow: hidden; border: 1px solid var(--v-border); border-radius: 10px; background: var(--surface-container-high); color: var(--on-surface); font-family: var(--font-ui); font-weight: 800; }
+.lvLogo img { width: 100%; height: 100%; object-fit: cover; }
+.lvNav { display: grid; gap: 2px; }
+.lvNav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--v-muted); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.lvNav button:hover { background: var(--surface-container-high); color: var(--on-surface); }
+.lvNav button.on { background: var(--surface-container-high); color: var(--on-surface); box-shadow: inset 2px 0 0 var(--primary); }
+.lvNav em, .lvTabs em { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--card); border: 1px solid var(--v-border); color: var(--v-muted); font-size: 11.5px; font-style: normal; text-align: center; }
+.lvMain { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.lvHead { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 18px clamp(16px, 2.4vw, 32px); border-bottom: 1px solid var(--v-border); background: var(--card); }
+.lvThumb { width: 72px; height: 72px; padding: 0; overflow: hidden; border: 1px solid var(--v-border); border-radius: 14px; background: var(--primary-container); cursor: pointer; }
+.lvThumb:disabled { cursor: default; }
+.lvThumb img { width: 100%; height: 100%; object-fit: cover; }
+.lvTitle { min-width: 0; }
+.lvCrumb { margin: 0; color: var(--v-muted); font-size: 12.5px; }
+.lvCrumb a { color: var(--v-muted); text-decoration: underline; text-underline-offset: 2px; }
+.lvTitle h1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0; font-family: var(--font-ui); font-size: clamp(20px, 2vw, 26px); font-weight: 800; letter-spacing: -.01em; }
+.lvMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0; color: var(--v-muted); font-size: 13px; }
+.lvArea { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lvStars { color: #8F5A00; font-weight: 700; }
+.lvStars em { color: var(--v-muted); font-style: normal; font-weight: 500; }
+.lvOpen, .lvClosed { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.lvOpen { color: var(--primary); }
+.lvOpen::before, .lvClosed::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.lvVerified { display: inline-flex; align-items: center; padding: 2px 8px; border: 1px solid var(--primary-container-deep); border-radius: 999px; background: var(--primary-container); color: var(--primary); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
+.lvActions { display: flex; gap: 8px; }
+.lvIcon { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--v-border); border-radius: 10px; background: var(--card); color: var(--on-surface); cursor: pointer; }
+.lvIcon:hover { background: var(--surface-container-high); }
+.lvIcon.on { color: #D64545; }
+.lvTabs { display: none; }
+.lvBody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px clamp(16px, 2.4vw, 32px) 32px; }
+.lvOverview { display: grid; gap: 14px; }
+.lvCard { padding: 16px 18px; border: 1px solid var(--v-border); border-radius: 12px; background: var(--card); }
+.lvCardHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lvLabel { margin: 0 0 8px; color: var(--v-muted); font-family: var(--font-ui); font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.lvText { margin: 0; color: var(--on-surface); line-height: 1.6; white-space: pre-line; }
+.lvMuted { margin: 4px 0 0; color: var(--v-muted); font-size: 13.5px; }
+.lvLink { padding: 0; border: 0; background: none; color: var(--indigo); font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.lvOfferTeaser { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; color: var(--on-surface); text-align: left; cursor: pointer; }
+.lvOfferTeaser small { display: block; color: var(--v-muted); }
+.lvOfferTag { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--butter); color: var(--on-butter); font-weight: 800; }
+.lvStrip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.lvStrip button, .lvGallery button { display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--v-border); border-radius: 10px; background: none; cursor: zoom-in; }
+.lvStrip img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.lvGallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.lvGallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.lvTable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.lvTable td { padding: 10px 4px; border-bottom: 1px solid var(--v-border); vertical-align: top; }
+.lvTable tr:last-child td { border-bottom: 0; }
+.lvTable small { display: block; color: var(--v-muted); font-size: 12.5px; }
+.lvPrice { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.lvOffers { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.lvOffers li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+.lvHours { display: grid; margin: 0; padding: 0; list-style: none; }
+.lvHours li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--v-border); font-size: 14px; }
+.lvHours li:last-child { border-bottom: 0; }
+.lvHours li.today { font-weight: 700; }
+.lvHours em { margin-left: 8px; padding: 1px 6px; border-radius: 6px; background: var(--primary-container); color: var(--primary); font-size: 11px; font-style: normal; }
+.lvReviewsWrap { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.lvRight { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding: 20px 16px; border-left: 1px solid var(--v-border); background: var(--v-bg); }
+.lvPhone { display: flex; align-items: center; gap: 12px; }
+.lvPhone small { display: block; color: var(--v-muted); font-size: 12px; }
+.lvPhone b { font-family: var(--font-mono); font-size: 18px; letter-spacing: .02em; }
+.lvPhone b.masked { color: var(--v-muted); }
+.lvRound { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 10px; background: var(--surface-container-high); color: var(--on-surface); }
+.lvBtnRow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.lvBtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px; margin-top: 10px; padding: 0 14px; border: 1px solid var(--v-border); border-radius: 10px; background: var(--card); color: var(--on-surface); font-family: var(--font-ui); font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.lvBtnRow .lvBtn { margin-top: 0; }
+.lvBtn:hover { background: var(--surface-container-high); }
+.lvBtn.primary { border-color: var(--on-surface); background: var(--on-surface); color: var(--card); }
+.lvBtn.primary:hover { background: #000; }
+[data-theme="dark"] .lvBtn.primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.lvFacts { display: grid; gap: 10px; margin: 0; }
+.lvFacts div { display: grid; gap: 2px; }
+.lvFacts dt { color: var(--v-muted); font-size: 12px; }
+.lvFacts dd { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; }
+.lvDot { width: 8px; height: 8px; border-radius: 50%; background: var(--outline); }
+.lvDot.open { background: var(--primary); }
+.lvNarrowOnly { display: none; }
+@media (max-width: 1200px) { .lv { grid-template-columns: 220px minmax(0, 1fr) 300px; } }
+@media (max-width: 1024px) {
+  .lv { grid-template-columns: minmax(0, 1fr); }
+  .lvSide, .lvRight { display: none; }
+  .lvNarrowOnly { display: block; }
+  .lvTabs { display: flex; flex: none; gap: 6px; overflow-x: auto; padding: 8px clamp(12px, 2.4vw, 32px); border-bottom: 1px solid var(--v-border); background: var(--card); scrollbar-width: none; }
+  .lvTabs::-webkit-scrollbar { display: none; }
+  .lvTabs button { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--v-border); border-radius: 999px; background: var(--card); color: var(--v-muted); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .lvTabs button.on { border-color: var(--on-surface); color: var(--on-surface); }
+  .lvReviewsWrap { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .lvHead { grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 12px 14px; }
+  .lvThumb { width: 52px; height: 52px; border-radius: 12px; }
+  .lvActions { grid-column: 1 / -1; justify-content: flex-end; margin-top: -6px; }
+  .lvBody { padding: 14px 14px 24px; }
+  .lvStrip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- /services and /products ---------- */
+.bxType { display: inline-flex; align-items: center; gap: 8px; }
+.bxFind { display: grid; gap: 4px; }
+.bxFind .cxLabel { margin: 0; }
+.bxFindBox { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--outline-variant); border-radius: 10px; background: var(--card); color: var(--v-muted); }
+.bxFindBox:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-container); }
+.bxFindBox input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--on-surface); font: inherit; }
+.bxFindTop { width: min(100%, 320px); }
+.bxHint { padding: 0 2px; }
+.cxChip.on { border-color: var(--primary); background: var(--primary-container); color: var(--primary); }
+.bxGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.bxCard { position: relative; display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 104px; padding: 14px; border: 1px solid var(--outline-variant); border-radius: 14px; background: var(--card); color: var(--on-surface); transition: border-color var(--motion-short) var(--ease-standard), box-shadow var(--motion-short) var(--ease-standard), transform var(--motion-short) var(--ease-standard); }
+.bxCard:hover { border-color: var(--primary); box-shadow: 0 8px 22px var(--shadow-tint); transform: translateY(-1px); }
+.bxImg { display: block; width: 72px; height: 72px; overflow: hidden; border-radius: 12px; background: var(--primary-container); }
+.bxImg img { width: 100%; height: 100%; object-fit: cover; }
+.bxText { display: grid; gap: 3px; min-width: 0; }
+.bxText b { font-family: var(--font-ui); font-size: 16px; }
+.bxText small { display: -webkit-box; overflow: hidden; color: var(--on-surface-variant); font-size: 13px; line-height: 1.4; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.bxMeta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.bxMeta em { padding: 1px 8px; border-radius: 999px; background: var(--surface-container-high); color: var(--on-surface-variant); font-size: 11.5px; font-style: normal; font-weight: 600; }
+.bxGo { color: var(--outline); }
+.bxCard:hover .bxGo { color: var(--primary); }
+.bxSkeleton { height: 104px; border-radius: 14px; }
+@media (max-width: 900px) { .bxFindTop { display: none; } .bxGrid { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 901px) { .bxSide + .cxMain .cxChips { display: none; } }
+
+.ocPrice { width: 110px; min-height: 34px; padding: 0 8px; border: 1px solid var(--outline-variant); border-radius: 8px; background: var(--card); color: var(--on-surface); font: inherit; }
+.odSelect.small { min-height: 32px; padding: 0 6px; font-size: 13px; }
+.acRow { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+@media (max-width: 680px) { .acRow { grid-template-columns: 1fr; } }
+
+/* Landing: reserve the category chips' space so nothing jumps when they load (CLS). */
+.lnChips { min-height: 80px; align-content: flex-start; }
+@media (max-width: 900px) {
+  .lnChips { flex-wrap: nowrap; min-height: 38px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .lnChips::-webkit-scrollbar { display: none; }
+  .lnChip { flex: none; }
+}

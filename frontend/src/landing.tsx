@@ -1,9 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, BadgeCheck, MapPin, Plus, Star } from "lucide-react";
 import { Shell } from "./App";
-import { fadeUp, stagger } from "./hub";
 import { LeafField } from "./leaves";
 import { SmartSearch } from "./smartSearch";
 import { coverFor } from "./covers";
@@ -39,7 +37,7 @@ function CategoryRow({ kind }: { kind: "service" | "product" }) {
   const base = kind === "service" ? "/services" : "/products";
   return (
     <div className="lnCats">
-      <Link className="lnCatsLabel" to={`${ROUTES.discover}?kind=${kind}`}>{t(kind === "service" ? "main.service" : "main.product")} <ArrowRight size={14} /></Link>
+      <Link className="lnCatsLabel" to={kind === "service" ? "/services" : "/products"}>{t(kind === "service" ? "main.service" : "main.product")} <ArrowRight size={14} /></Link>
       <div className="lnChips">
         {top.map((item) => (
           <Link key={item.id} to={`${base}/${item.slug}`} className="lnChip">
@@ -105,7 +103,6 @@ function TrustedCard({ business }: { business: Business }) {
 
 export function Landing({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
   const { t } = useT();
-  const reduce = useReducedMotion();
   const recent = useListings("recent");
   const trusted = useListings("relevance", "&verified=true");
   const fallback = useListings("rating");
@@ -116,15 +113,16 @@ export function Landing({ user, onAuthChange }: { user?: PortalUser; onAuthChang
   return (
     <Shell user={user} onAuthChange={onAuthChange} bottomNav={null} wide>
       <section className="lnHero">
-        <motion.div className="lnCopy" initial={reduce ? false : "hidden"} animate="show" variants={stagger}>
-          <motion.h1 variants={fadeUp}>{t("ln.title1")} <em>{t("ln.title2")}</em></motion.h1>
-          <motion.p variants={fadeUp} className="lnSub">{t("ln.sub")}</motion.p>
-          <motion.div variants={fadeUp} className="lnSearch"><SmartSearch size="large" /></motion.div>
-          <motion.div variants={fadeUp} className="lnCatBlock">
+        <div className="lnCopy">
+          {/* No entrance animation here: this text is what people see first (fast LCP). */}
+          <h1>{t("ln.title1")} <em>{t("ln.title2")}</em></h1>
+          <p className="lnSub">{t("ln.sub")}</p>
+          <div className="lnSearch"><SmartSearch size="large" /></div>
+          <div className="lnCatBlock">
             <CategoryRow kind="service" />
             <CategoryRow kind="product" />
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
         <div className="lnArt"><LeafField /></div>
       </section>
 
