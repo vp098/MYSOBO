@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiPost } from "./services/api";
 import { useT } from "./i18n";
+import type { LoginResult } from "./session";
 
 /*
  * "Continue with Google" using Google Identity Services.
@@ -34,7 +35,7 @@ function loadGoogleScript() {
   return scriptPromise;
 }
 
-export function GoogleSignIn({ onSuccess }: { onSuccess: () => void }) {
+export function GoogleSignIn({ onSuccess }: { onSuccess: (result: LoginResult) => void }) {
   const { t, lang } = useT();
   const holder = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -51,9 +52,7 @@ export function GoogleSignIn({ onSuccess }: { onSuccess: () => void }) {
           setError("");
           setPending(true);
           try {
-            const response = await apiPost<{ token: string }>("/auth/google/", { credential });
-            sessionStorage.setItem("mysobo-token", response.token);
-            onSuccess();
+            onSuccess(await apiPost<LoginResult>("/auth/google/", { credential }));
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : t("err.google"));
           } finally {

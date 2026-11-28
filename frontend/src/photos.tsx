@@ -204,7 +204,7 @@ export function PhotoLibrary({ owned }: { owned: Business[] }) {
       <div className="phMeter">
         <span>{t("ph.count", { n: photos.length, limit })}{business ? ` · ${business.name}` : ""}</span>
         <span className="phMeterBar"><span style={{ width: `${Math.min(100, (photos.length / Math.max(limit, 1)) * 100)}%` }} /></span>
-        {room === 0 && <a className="phMeterLink" href="/mysobo/owner/plans">{t("ph.morePhotos")}</a>}
+        {room === 0 && <a className="phMeterLink" href="/sobo/business-owner/plans">{t("ph.morePhotos")}</a>}
       </div>
 
       {message && (

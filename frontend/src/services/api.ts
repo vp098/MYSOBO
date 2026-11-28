@@ -1,15 +1,42 @@
-const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
+/** Always same-origin: Vite proxies /api locally, Vercel rewrites it in production, so the session cookie is first-party. */
+const API_BASE = "/api";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function readCookie(name: string) {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+let csrfPromise: Promise<string> | null = null;
+async function csrfToken(): Promise<string> {
+  const existing = readCookie("csrftoken");
+  if (existing) return existing;
+  csrfPromise ??= fetch(`${API_BASE}/auth/csrf/`, { credentials: "same-origin" })
+    .then((response) => response.json().catch(() => null) as Promise<{ csrfToken?: string } | null>)
+    .then((body) => readCookie("csrftoken") || body?.csrfToken || "")
+    .finally(() => { csrfPromise = null; });
+  return csrfPromise;
+}
+
+const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body instanceof FormData) headers.delete("Content-Type");
   else headers.set("Content-Type", "application/json");
-  const token = sessionStorage.getItem("mysobo-token");
-  if (token) headers.set("Authorization", `Token ${token}`);
-  const response = await fetch(`${API_BASE}/${path.replace(/^\/+/, "")}`, { ...init, headers });
+  const method = (init.method ?? "GET").toUpperCase();
+  if (UNSAFE.has(method)) headers.set("X-CSRFToken", await csrfToken());
+  const response = await fetch(`${API_BASE}/${path.replace(/^\/+/, "")}`, { ...init, headers, credentials: "same-origin" });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `API request failed: ${response.status}`);
+    throw new ApiError(body?.detail ?? `API request failed: ${response.status}`, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -191,6 +218,10 @@ export type PortalUser = {
   email?: string;
   name?: string;
   is_superadmin: boolean;
+  account_type: "resident" | "business_owner";
+  theme: "warm" | "neutral" | "light" | "dark";
+  has_business: boolean;
+  home: string;
 };
 
 export type Review = {
@@ -209,21 +240,21 @@ export function apiUploadWithProgress<T>(
   onProgress: (fraction: number) => void,
   method: "POST" | "PUT" = "POST",
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
+  return csrfToken().then((csrf) => new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_BASE}/${path.replace(/^\/+/, "")}`);
-    const token = sessionStorage.getItem("mysobo-token");
-    if (token) xhr.setRequestHeader("Authorization", `Token ${token}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("X-CSRFToken", csrf);
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(event.loaded / event.total); };
     xhr.onload = () => {
       let body: unknown = null;
       try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
       if (xhr.status >= 200 && xhr.status < 300) resolve(body as T);
-      else reject(new Error((body as { detail?: string } | null)?.detail ?? `Upload failed: ${xhr.status}`));
+      else reject(new ApiError((body as { detail?: string } | null)?.detail ?? `Upload failed: ${xhr.status}`, xhr.status));
     };
     xhr.onerror = () => reject(new Error("Network error. Check your connection and try again."));
     xhr.send(formData);
-  });
+  }));
 }
 
 export type BusinessPhoto = {

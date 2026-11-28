@@ -4,7 +4,7 @@
   "short_name": "MySobo",
   "description": "South Bopal's verified local businesses and services.",
   "lang": "gu",
-  "start_url": "/mysobo?source=app",
+  "start_url": "/sobo/app?source=app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

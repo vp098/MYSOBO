@@ -5,9 +5,11 @@ import { apiGet, apiPost, apiPut, apiUpload, type Business, type PortalUser } fr
 import { BusinessForm, CategoryManager, Shell, categoryDataFromForm } from "./App";
 import { coverFor } from "./covers";
 import { LeafMark } from "./logo";
+import { DashTabbar, useScrollMainToTop } from "./dashboard";
+import { ThemePicker } from "./theme";
 
 /*
- * Super Admin operations centre at /mysobo/superadmin/*.
+ * Super Admin operations centre at /sobo/admin/*.
  * Sidebar with live badges; each section uses the existing admin APIs.
  * Staff-facing, so the copy is English.
  */
@@ -24,6 +26,7 @@ type Settings = { grace_period_days: number; free_pro_cap: number; approval_sla_
 type Dashboard = { businesses: number; verified: number; pending_approvals: number; pending_claims: number; pending_posts: number; pending_plan_requests: number; pending_reports: number; revenue_paise: number };
 
 const ICONS: Record<string, ReactNode> = {
+  more: <><circle cx="6" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="18" cy="12" r="1.4" fill="currentColor" /></>,
   grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
   shield: <><path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6z" /><path d="m9 12 2.2 2.2L15.5 10" /></>,
   store: <><path d="M4 9.5 5.5 5h13L20 9.5" /><path d="M5.5 11v8.5h13V11M10 19.5v-4h4v4" /><path d="M4 9.5c0 1.4 1.1 2.5 2.7 2.5s2.6-1.1 2.6-2.5c0 1.4 1.1 2.5 2.7 2.5s2.7-1.1 2.7-2.5c0 1.4 1 2.5 2.6 2.5S20 10.9 20 9.5" /></>,
@@ -70,6 +73,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const enabled = Boolean(user?.is_superadmin);
+  useScrollMainToTop(section);
 
   const q = <T,>(key: string, url: string) => useQuery({ queryKey: [key], queryFn: () => apiGet<T>(url), enabled });
   const dashboard = q<Dashboard>("admin-dashboard", "/admin/dashboard/").data;
@@ -98,7 +102,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
   if (!user?.is_superadmin) {
     return (
       <Shell user={user} onAuthChange={onAuthChange} bottomNav={null}>
-        <section className="section saGate"><LeafMark size={56} /><h1>Super admin only</h1><p className="mutedText">Sign in with an account that has the super admin role.</p>{!user && <a className="odBtn" href="/mysobo/superadmin?dialog=login">Log in</a>}</section>
+        <section className="section saGate"><LeafMark size={56} /><h1>Super admin only</h1><p className="mutedText">Sign in with an account that has the super admin role.</p>{!user && <a className="odBtn" href="/sobo/admin?dialog=login">Log in</a>}</section>
       </Shell>
     );
   }
@@ -121,10 +125,24 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
     { path: "settings", label: "Settings", icon: "gear" },
   ];
   const active = SECTIONS.find((item) => item.path === section) ?? SECTIONS[0];
-  const to = (path: string) => path ? `/mysobo/superadmin/${path}` : "/mysobo/superadmin";
+  const to = (path: string) => path ? `/sobo/admin/${path}` : "/sobo/admin";
+  const TAB_PATHS = ["", "verification", "businesses", "payments"];
+  const short: Record<string, string> = { "": "Overview", verification: "Verify", businesses: "Businesses", payments: "Payments" };
+  const bottom = (
+    <DashTabbar
+      label="Admin sections"
+      moreLabel="More"
+      active={active.path}
+      to={to}
+      icon={(name, size) => <Icon name={name} size={size} />}
+      tabs={SECTIONS.filter((item) => TAB_PATHS.includes(item.path)).map((item) => ({ ...item, label: short[item.path] }))}
+      more={SECTIONS.filter((item) => !TAB_PATHS.includes(item.path))}
+      onNavigate={() => { setNotice(""); setError(""); }}
+    />
+  );
 
   return (
-    <Shell user={user} onAuthChange={onAuthChange} bottomNav={null}>
+    <Shell user={user} onAuthChange={onAuthChange} bottomNav={bottom} dashboard>
       <div className="odLayout saLayout">
         <aside className="odSide saSide" aria-label="Admin navigation">
           <div className="saBrand"><LeafMark size={30} /><div><b>MySobo</b><span><Icon name="shield" size={13} />Operations control</span></div></div>
@@ -137,9 +155,6 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           </nav>
         </aside>
         <div className="odMain">
-          <nav className="saMobileNav" aria-label="Admin sections">
-            {SECTIONS.map((item) => <Link key={item.path} to={to(item.path)} className={item === active ? "active" : ""}>{item.label}{item.badge ? <em className="saBadge">{item.badge}</em> : null}</Link>)}
-          </nav>
           {(error || notice) && <div className="odFeedback" role="status">{error && <p className="formError">{error}</p>}{notice && <p className="successMessage">{notice}</p>}</div>}
 
           {active.path === "" && (
@@ -194,7 +209,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "payments" && <Payments payments={payments} businesses={businesses} run={run} />}
           {active.path === "reports" && <Reports reports={reports} run={run} />}
           {active.path === "audit" && <><SaHead title="Admin activity / audit history" copy="Every approval, rejection, payment and settings change, newest first." /><section className="odCard"><AuditList rows={audit} /></section></>}
-          {active.path === "settings" && <SettingsForm settings={settings} run={run} />}
+          {active.path === "settings" && <><SettingsForm settings={settings} run={run} /><section className="odCard saTheme"><ThemePicker user={user} /></section></>}
         </div>
       </div>
     </Shell>

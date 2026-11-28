@@ -7,7 +7,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers, status
-from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -15,6 +14,7 @@ from rest_framework.views import APIView
 
 from .google import GoogleTokenError, verify_google_credential
 from .models import OTPChallenge, Profile, User
+from .sessions import signed_in
 from .otp import (
     OTPDeliveryError,
     generate_otp,
@@ -187,8 +187,7 @@ class OTPVerifyView(APIView):
         profile.save(
             update_fields=("consent_at", "consent_version", "mobile")
         )
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key})
+        return signed_in(request, user)
 
 
 class GoogleLoginThrottle(ScopedRateThrottle):
@@ -243,8 +242,7 @@ class GoogleLoginView(APIView):
             profile.consent_at = timezone.now()
             profile.consent_version = "google-signin"
             profile.save(update_fields=("consent_at", "consent_version"))
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key})
+        return signed_in(request, user)
 
 
 class DemoLoginThrottle(ScopedRateThrottle):
@@ -291,8 +289,7 @@ class DemoEmailLoginView(APIView):
             return Response({"detail": "This account cannot sign in."}, status=status.HTTP_403_FORBIDDEN)
         set_authenticated_user_rls_context(user.pk)
         Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key})
+        return signed_in(request, user)
 
 
 # --------------------------------------------------
@@ -310,11 +307,10 @@ def _is_admin(user):
     return user.is_staff or user.is_superuser or user.admin_roles.exists()
 
 
-def _token_for(user):
+def _token_for(request, user, status_code=200):
     set_authenticated_user_rls_context(user.pk)
     Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
-    token, _ = Token.objects.get_or_create(user=user)
-    return Response({"token": token.key})
+    return signed_in(request, user, status_code)
 
 
 class EmailRegisterView(APIView):
@@ -356,10 +352,11 @@ class EmailRegisterView(APIView):
         # login can be given a password here. In production that is refused above.
         user.set_password(password)
         user.save()
-        Profile.objects.update_or_create(id=user, defaults={"name": name})
-        response = _token_for(user)
-        response.status_code = status.HTTP_201_CREATED
-        return response
+        account_type = str(request.data.get("account_type", "resident"))
+        if account_type not in Profile.AccountType.values:
+            account_type = Profile.AccountType.RESIDENT
+        Profile.objects.update_or_create(id=user, defaults={"name": name, "account_type": account_type})
+        return _token_for(request, user, status.HTTP_201_CREATED)
 
 
 class EmailLoginView(APIView):
@@ -382,4 +379,4 @@ class EmailLoginView(APIView):
             if not candidates:
                 check_password(password, _DUMMY_HASH)  # keep timing similar
             return Response({"detail": "Email or password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
-        return _token_for(user)
+        return _token_for(request, user)

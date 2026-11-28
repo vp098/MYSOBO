@@ -491,6 +491,26 @@ REST_FRAMEWORK = {
 
 
 # --------------------------------------------------
+# BROWSER SESSIONS
+# --------------------------------------------------
+# The web app signs in with an httpOnly session cookie (no tokens in browser
+# storage). In production the frontend proxies /api through its own domain
+# (see frontend/vercel.json), so the cookie is first-party.
+
+FRONTEND_URL = env("FRONTEND_URL", "https://mysobo.vercel.app").rstrip("/")
+for _origin in [FRONTEND_URL] + (["http://localhost:4173", "http://127.0.0.1:4173"] if DEBUG else []):
+    if _origin and _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
+
+SESSION_COOKIE_NAME = "mysobo_session"
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30  # 30 days, renewed when the app is opened
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = False  # the app reads it to send X-CSRFToken
+
+
+# --------------------------------------------------
 # PRODUCTION SECURITY
 # --------------------------------------------------
 
