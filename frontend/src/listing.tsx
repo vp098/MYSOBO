@@ -258,6 +258,7 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
               <section className="lpSection">
                 <h2>{t("lp.about")}</h2>
                 <p className="lpText">{business.description}</p>
+                {business.description_locked && <button type="button" className="lpReadMore" onClick={askLogin}>{t("cards.readMore")}</button>}
               </section>
             )}
 

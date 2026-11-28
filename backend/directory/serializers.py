@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.db.models import Q
+from django.utils import timezone
 from django.utils.text import slugify
 
 from .models import (
@@ -337,7 +339,24 @@ def _viewer_access(context, user):
     return cached
 
 
+def active_offers(queryset):
+    today = timezone.localdate()
+    return queryset.filter(status=BusinessPost.Status.APPROVED).filter(
+        Q(expires_on__isnull=True) | Q(expires_on__gte=today)
+    ).order_by("-created_at")
+
+
 CONTACT_FIELDS = ("phone", "whatsapp", "email")
+GUEST_DESCRIPTION_CHARS = 120
+
+
+def shorten(text, limit=GUEST_DESCRIPTION_CHARS):
+    """Cut text at a word boundary so guests get a teaser, not the full write-up."""
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text, False
+    cut = text[:limit].rsplit(" ", 1)[0] or text[:limit]
+    return cut.rstrip(",.;:-") + "…", True
 
 
 def mask_phone(value):
@@ -351,10 +370,13 @@ def mask_phone(value):
 
 
 def hide_contact_details(data, user):
-    """Residents must sign in to see a business's phone, WhatsApp and email."""
+    """Residents must sign in to see a business's phone, WhatsApp, email and full description."""
     if user and user.is_authenticated:
         data["contact_locked"] = False
+        data["description_locked"] = False
         return data
+    if "description" in data:
+        data["description"], data["description_locked"] = shorten(data["description"])
     has_contact = any(data.get(field) for field in CONTACT_FIELDS if field in data)
     for field in ("phone", "whatsapp"):
         if field in data:
@@ -376,6 +398,7 @@ class BusinessSerializer(serializers.ModelSerializer):
     average_rating = serializers.FloatField(read_only=True, default=None)
     review_count = serializers.IntegerField(read_only=True, default=0)
     verified = serializers.SerializerMethodField()
+    offer = serializers.SerializerMethodField()
 
     class Meta:
         model = Business
@@ -384,7 +407,7 @@ class BusinessSerializer(serializers.ModelSerializer):
             "subcategory_id", "description", "category_data", "phone", "whatsapp",
             "email", "website", "logo", "cover_image", "address",
             "hide_address", "lat", "lng", "society", "specialties", "photos", "hours",
-            "average_rating", "review_count", "verified",
+            "average_rating", "review_count", "verified", "offer",
             "verification_level", "source", "hidden", "plan", "plan_expires_on",
             "approval_requested_at", "deleted_at", "created_at", "updated_at",
         )
@@ -486,6 +509,16 @@ class BusinessSerializer(serializers.ModelSerializer):
 
     def get_hours(self, instance):
         return BusinessHourSerializer(instance.hours.all(), many=True).data
+
+    def get_offer(self, instance):
+        """The newest approved offer that has not expired, for the listing card."""
+        offers = getattr(instance, "active_offers", None)
+        if offers is None:
+            offers = active_offers(BusinessPost.objects.filter(business=instance))[:1]
+        offer = next(iter(offers), None)
+        if not offer:
+            return None
+        return {"id": str(offer.id), "title": offer.title or offer.body[:80], "expires_on": offer.expires_on}
 
     def get_verified(self, instance):
         return instance.verification_level >= 2

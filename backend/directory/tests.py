@@ -1,4 +1,5 @@
 import io
+from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -7,6 +8,7 @@ from rest_framework.test import APIClient
 from accounts.models import AdminRole, Profile, User
 from billing.models import Invoice, Payment
 from .models import (
+    BusinessPost,
     Business,
     BusinessMember,
     BusinessProduct,
@@ -1089,3 +1091,50 @@ class OwnerStatsSeriesTests(TestCase):
         self.assertEqual(body["last14"], {"view": 2, "call": 1, "whatsapp": 1})
         self.assertEqual(body["prev14"]["view"], 1)
         self.assertEqual(body["view"], 3)
+
+
+class GuestTeaserAndOfferTests(TestCase):
+    LONG = "Trusted family clinic in South Bopal. " * 10
+
+    def setUp(self):
+        self.business = Business.objects.create(
+            name="Family Clinic", slug="family-clinic", kind="service", source="owner", description=self.LONG,
+        )
+        self.client = APIClient()
+
+    def test_guest_gets_shortened_description(self):
+        data = self.client.get("/api/businesses/family-clinic/").json()
+        self.assertTrue(data["description_locked"])
+        self.assertLessEqual(len(data["description"]), 121)
+        self.assertTrue(data["description"].endswith("…"))
+        listing = self.client.get("/api/businesses/").json()
+        rows = listing["results"] if isinstance(listing, dict) else listing
+        self.assertTrue(all(len(row["description"]) <= 121 for row in rows))
+
+    def test_signed_in_gets_full_description(self):
+        self.client.force_authenticate(User.objects.create_user(username="reader2", password="x"))
+        data = self.client.get("/api/businesses/family-clinic/").json()
+        self.assertFalse(data["description_locked"])
+        self.assertEqual(data["description"], self.LONG)
+
+    def test_card_shows_only_approved_unexpired_offer(self):
+        today = timezone.localdate()
+        BusinessPost.objects.create(business=self.business, title="Pending", status="pending")
+        BusinessPost.objects.create(business=self.business, title="Old", status="approved", expires_on=today - timedelta(days=1))
+        BusinessPost.objects.create(business=self.business, title="Free check-up", status="approved", expires_on=today)
+        listing = self.client.get("/api/businesses/").json()
+        rows = listing["results"] if isinstance(listing, dict) else listing
+        row = next(row for row in rows if row["slug"] == "family-clinic")
+        self.assertEqual(row["offer"]["title"], "Free check-up")
+
+
+class PublicPlansTests(TestCase):
+    def test_lists_plans_with_gst_on_top(self):
+        from billing.models import PlanPrice
+        PlanPrice.objects.update_or_create(plan="pro", defaults={"monthly_price": 499, "active": True})
+        PlanPrice.objects.update_or_create(plan="premium", defaults={"monthly_price": 1999, "active": True})
+        data = APIClient().get("/api/plans/").json()
+        self.assertEqual(data["gst_percent"], 18)
+        by_plan = {row["plan"]: row for row in data["plans"]}
+        self.assertEqual(by_plan["pro"]["monthly_total"], 588.82)
+        self.assertEqual(by_plan["premium"]["monthly_total"], 2358.82)
