@@ -1,14 +1,19 @@
 {
   "id": "/mysobo",
-  "name": "MySobo — વિશ્વસનીય મદદ, ઘરની નજીક",
-  "short_name": "MySobo",
-  "description": "South Bopal's verified local businesses and services.",
+  "name": "SOBO",
+  "short_name": "SOBO",
+  "description": "Trusted local businesses, services and shops in South Bopal.",
   "lang": "gu",
+  "dir": "ltr",
   "start_url": "/sobo/app?source=app",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait",
-  "theme_color": "#2B7A4B",
+  "theme_color": "#287A4B",
   "background_color": "#FCFEFB",
   "categories": [
     "lifestyle",
@@ -23,16 +28,60 @@
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Services",
+      "url": "/services?source=shortcut",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "url": "/products?source=shortcut",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "My dashboard",
+      "url": "/sobo/app?source=shortcut",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ],
   "related_applications": [

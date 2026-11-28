@@ -380,3 +380,52 @@ class GoogleOnlyTests(TestCase):
         self.assertIn(self.client.get("/api/auth/me/").status_code, (401, 403))
         self.assertIn(self.client.get("/api/owner/businesses/").status_code, (401, 403))
         self.assertIn(self.client.get("/api/admin/overview/").status_code, (401, 403))
+
+
+
+class SuperAdminBootstrapTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+
+    def login(self, email, sub):
+        from unittest import mock
+        claims = {"aud": "cid.apps.googleusercontent.com", "iss": "https://accounts.google.com", "exp": str(int(__import__("time").time()) + 600),
+                  "email": email, "email_verified": "true", "sub": sub, "name": "Owner Person"}
+        with override_settings(GOOGLE_CLIENT_ID="cid.apps.googleusercontent.com", SUPERADMIN_EMAILS={"boss@example.com"}), \
+                mock.patch("accounts.google.fetch_token_info", return_value=claims):
+            return self.client.post("/api/auth/google/", {"credential": "x" * 40, "account_type": "resident"}, format="json")
+
+    def test_configured_email_becomes_superadmin_and_lands_on_admin(self):
+        response = self.login("Boss@Example.com", "g-boss")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["home"], "/sobo/admin")
+        self.assertTrue(self.client.get("/api/auth/me/").json()["is_superadmin"])
+        self.assertEqual(self.client.get("/api/admin/overview/").status_code, 200)
+
+    def test_other_signups_never_become_admin(self):
+        response = self.login("someone@example.com", "g-someone")
+        self.assertEqual(response.json()["home"], "/sobo/resident")
+        self.assertEqual(self.client.get("/api/admin/overview/").status_code, 403)
+
+    def test_grant_and_revoke_commands(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from .models import AdminRole
+        user = User.objects.create_user(username="ops2", email="ops2@example.com")
+        call_command("grant_superadmin", "OPS2@example.com", stdout=StringIO())
+        self.assertTrue(AdminRole.objects.filter(user=user, role="super_admin").exists())
+        call_command("revoke_superadmin", "ops2@example.com", stdout=StringIO())
+        self.assertFalse(AdminRole.objects.filter(user=user, role="super_admin").exists())
+
+
+class UploadsUnavailableTests(TestCase):
+    def test_uploads_return_503_when_storage_is_not_configured(self):
+        user = User.objects.create_user(username="up", password="x")
+        client = APIClient()
+        client.force_authenticate(user)
+        with override_settings(MEDIA_UPLOADS_ENABLED=False):
+            response = client.post("/api/me/avatar/", {}, format="multipart")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["code"], "uploads_unavailable")
