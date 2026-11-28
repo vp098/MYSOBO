@@ -30,13 +30,14 @@ import { SuperAdminDashboard } from "./superadmin";
 import { coverFor, coverForCategory } from "./covers";
 import { ListingPage } from "./listing";
 import { Onboarding, shouldOnboard } from "./onboarding";
-import { NeighbourhoodHub, fadeUp, stagger } from "./hub";
+import { fadeUp, stagger } from "./hub";
 import { motion, useReducedMotion } from "framer-motion";
 import { SMS_OTP_ENABLED } from "./google";
 import { AuthScreen } from "./auth";
 import { ME_KEY, ROUTES, useMe, type LoginResult } from "./session";
 import { useApplyTheme } from "./theme";
 import { ResidentDashboard } from "./resident";
+import { Landing } from "./landing";
 
 export function Shell({
   children,
@@ -77,6 +78,7 @@ export function Shell({
     const next = new URLSearchParams(params);
     next.delete("dialog");
     next.delete("go");
+    next.delete("as");
     setParams(next);
   }
 
@@ -118,13 +120,13 @@ export function Shell({
       <main>{children}</main>
       {bottomNav === undefined ? <ResidentTabbar /> : bottomNav}
       {(params.get("dialog") === "login" || params.get("dialog") === "signup") && (
-        <LoginDialog onClose={closeLogin} onSuccess={loginComplete} startWith={params.get("dialog") === "signup" ? "signup" : "login"} />
+        <LoginDialog onClose={closeLogin} onSuccess={loginComplete} startWith={params.get("dialog") === "signup" ? "signup" : "login"} accountType={params.get("as") === "owner" ? "business_owner" : "resident"} />
       )}
     </div>
   );
 }
 
-function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () => void; onSuccess: (result: LoginResult) => void; startWith?: "login" | "signup" }) {
+function LoginDialog({ onClose, onSuccess, startWith = "login", accountType }: { onClose: () => void; onSuccess: (result: LoginResult) => void; startWith?: "login" | "signup"; accountType?: "resident" | "business_owner" }) {
   const { t } = useT();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -180,6 +182,7 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
     return (
       <AuthScreen
         startWith={startWith}
+        accountType={accountType}
         onSuccess={onSuccess}
         onClose={onClose}
         onMobile={SMS_OTP_ENABLED ? () => setMode("otp") : undefined}
@@ -400,7 +403,8 @@ export function BusinessCards({ businesses }: { businesses: Business[] }) {
               <span className="bizCover">
                 <img src={coverFor(business)} alt="" loading="lazy" />
                 {business.category && <span className="bizTag">{business.category.name}</span>}
-                {business.created_at && Date.parse(business.created_at) > weekAgo && <span className="bizNew">{t("cards.new")}</span>}
+                {business.offer ? <span className="bizOffer">{business.offer.title}</span>
+                  : business.created_at && Date.parse(business.created_at) > weekAgo && <span className="bizNew">{t("cards.new")}</span>}
               </span>
               <span className="bizBody">
                 <strong>{business.name}{business.verified && <span className="vTick" title={t("vf.verified")}>✓</span>}</strong>
@@ -412,6 +416,7 @@ export function BusinessCards({ businesses }: { businesses: Business[] }) {
                   {openState(business) && <span className={openState(business) === "open" ? "bizOpenNow" : "bizClosedNow"}>{openState(business) === "open" ? t("lp.openNow") : t("lp.closedNow")}</span>}
                 </span>
                 <span className="bizDesc">{business.description || t("cards.inSouthBopal", { kind: kindLabel })}</span>
+                {business.contact_locked && business.phone_masked && <span className="bizMasked">{business.phone_masked} · {t("cards.loginToSee")}</span>}
               </span>
             </button>
             <div className="bizActions">
@@ -642,9 +647,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   const resultsRef = useRef<HTMLElement>(null);
   const { t } = useT();
   const requestedKind = params.get("kind");
-  const kind = requestedKind === "service" || requestedKind === "product"
-    ? requestedKind
-    : "all";
+  const kind: "service" | "product" = requestedKind === "product" ? "product" : "service";
   const selectedCategory = params.get("category") ?? "";
   const selectedSubcategory = params.get("subcategory") ?? "";
   const query = params.get("q") ?? "";
@@ -719,16 +722,14 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
     if (key === "category") next.delete("subcategory");
     if (key === "kind" && selectedCategory) {
       const selected = allCategories.find((category) => category.slug === selectedCategory);
-      const supported = value === "all"
-        || (value === "service" && selected?.supports_services)
+      const supported = (value === "service" && selected?.supports_services)
         || (value === "product" && selected?.supports_products);
       if (!supported) {
         next.delete("category");
         next.delete("subcategory");
       } else if (selectedSubcategory) {
         const subcategory = selected?.subcategories.find((item) => item.slug === selectedSubcategory);
-        const subcategorySupported = value === "all"
-          || (value === "service" && subcategory?.supports_services)
+        const subcategorySupported = (value === "service" && subcategory?.supports_services)
           || (value === "product" && subcategory?.supports_products);
         if (!subcategorySupported) next.delete("subcategory");
       }
@@ -747,17 +748,18 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           <p className="heroSub">{t("rs.sub")}</p>
           <SearchBox />
           <div className="heroFilters">
-          <span className="heroFilterLabel">{t("rs.filterType")}</span>
-          <div className="kindTabs" aria-label={t("home.tabsLabel")}>
-            {["all", "service", "product"].map((item) => (
+          <div className="mainKinds" role="radiogroup" aria-label={t("home.tabsLabel")}>
+            {(["service", "product"] as const).map((item) => (
               <button
                 key={item}
-                className={kind === item ? "active" : ""}
+                className={kind === item ? "on" : ""}
                 type="button"
-                aria-pressed={kind === item}
+                role="radio"
+                aria-checked={kind === item}
                 onClick={() => setFilter("kind", item)}
               >
-                {item === "all" ? t("tab.all") : item === "service" ? t("tab.service") : t("tab.product")}
+                <b>{t(item === "service" ? "main.service" : "main.product")}</b>
+                <small>{t(item === "service" ? "main.serviceHint" : "main.productHint")}</small>
               </button>
             ))}
           </div>
@@ -802,8 +804,6 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           ))}
         </ul>
       </section>
-
-      <NeighbourhoodHub />
 
       <section className="section categorySection" id="categories">
         <div className="sectionTitle">
@@ -874,8 +874,8 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           <div>
             <p className="eyebrow">
               {selectedCategory
-                ? kind === "all" ? t("home.eyCategory") : kind === "service" ? t("home.eyServiceCat") : t("home.eyProductCat")
-                : kind === "product" ? t("home.eyShop") : kind === "service" ? t("home.eyFind") : t("home.eyBrowse")}
+                ? kind === "service" ? t("home.eyServiceCat") : t("home.eyProductCat")
+                : kind === "product" ? t("home.eyShop") : t("home.eyFind")}
             </p>
             <h2>{query ? t("home.searchResult", { q: query }) : selectedSubcategoryName ?? selectedCategoryName ?? t("home.trusted")}</h2>
           </div>
@@ -887,7 +887,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
             {selectedCategoryName && <button type="button" className="filterChip" onClick={() => setFilter("category", "")}>{selectedCategoryName} <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
             {query && <button type="button" className="filterChip" onClick={() => setFilter("q", "")}>“{query}” <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
             {area && <button type="button" className="filterChip" onClick={() => { try { localStorage.removeItem("mysobo-area"); } catch { /* ignore */ } setFilter("area", ""); }}>{area} <b aria-hidden="true">×</b><span className="srOnly">{t("rs.clear")}</span></button>}
-            <button type="button" className="textLink" onClick={() => { try { localStorage.removeItem("mysobo-area"); } catch { /* ignore */ } setParams(new URLSearchParams(kind === "all" ? {} : { kind })); }}>{t("rs.clearAll")}</button>
+            <button type="button" className="textLink" onClick={() => { try { localStorage.removeItem("mysobo-area"); } catch { /* ignore */ } setParams(new URLSearchParams(kind === "service" ? {} : { kind })); }}>{t("rs.clearAll")}</button>
           </div>
         )}
         {isLoading ? <p className="emptyState">{t("home.finding")}</p> : businessesError && businessData === undefined ? (
@@ -900,16 +900,12 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           <div className="emptyState">
             <h2>{selectedSubcategoryName || selectedCategoryName
               ? t("empty.namedTitle", { name: selectedSubcategoryName ?? selectedCategoryName ?? "" })
-              : kind === "all"
-                ? t("empty.allTitle")
-                : kind === "service" ? t("empty.serviceTitle") : t("empty.productTitle")}</h2>
+              : kind === "service" ? t("empty.serviceTitle") : t("empty.productTitle")}</h2>
             <p>{selectedSubcategoryName || selectedCategoryName
               ? t("empty.selectionText")
               : query
                 ? t("empty.searchText")
-                : kind === "all"
-                  ? t("empty.allText")
-                  : kind === "service" ? t("empty.serviceText") : t("empty.productText")}</p>
+                : kind === "service" ? t("empty.serviceText") : t("empty.productText")}</p>
             {selectedCategory && <button className="smallButton" type="button" onClick={() => setFilter("category", "")}>{t("home.browseAll")}</button>}
           </div>
         )}
@@ -1622,8 +1618,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to={ROUTES.landing} replace />} />
-      {/* Phase B replaces this with the /sobo landing page. */}
-      <Route path="/sobo" element={<Navigate to={ROUTES.discover} replace />} />
+      <Route path="/sobo" element={<Landing user={user} onAuthChange={authChanged} />} />
       <Route path="/sobo/app" element={<AppEntry />} />
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
       <Route path="/sobo/resident/*" element={signedInOnly(<ResidentDashboard user={user} onAuthChange={authChanged} />)} />

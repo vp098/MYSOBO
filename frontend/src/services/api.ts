@@ -156,6 +156,13 @@ export type Business = {
   average_rating?: number | null;
   review_count?: number;
   category_data?: Record<string, string | number | boolean>;
+  /** Guests only: the number with all but the last two digits hidden. */
+  phone_masked?: string;
+  whatsapp_masked?: string;
+  contact_locked?: boolean;
+  /** Guests only: the description was shortened by the server. */
+  description_locked?: boolean;
+  offer?: { id: string; title: string; expires_on: string | null } | null;
 };
 
 export type BusinessHour = {

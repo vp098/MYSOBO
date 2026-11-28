@@ -79,3 +79,11 @@ class Invoice(models.Model):
 class AppSetting(models.Model):
     key = models.CharField(max_length=100, primary_key=True)
     value = models.JSONField(default=dict)
+
+
+GST_PERCENT = 18
+
+
+def with_gst(rupees):
+    """Price including 18% GST, rounded to paise: 499 -> 588.82."""
+    return round(rupees * (100 + GST_PERCENT) / 100, 2)

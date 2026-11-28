@@ -36,6 +36,7 @@ from .serializers import (
     CategorySerializer,
     ReviewSerializer,
     SubcategoryAdminSerializer,
+    active_offers,
 )
 
 
@@ -508,7 +509,10 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Business.objects.filter(deleted_at__isnull=True).select_related(
             "category", "subcategory", "society"
-        ).prefetch_related("photos", "hours", "category__fields").annotate(
+        ).prefetch_related(
+            "photos", "hours", "category__fields",
+            Prefetch("posts", queryset=active_offers(BusinessPost.objects.all()), to_attr="active_offers"),
+        ).annotate(
             average_rating=Avg("reviews__rating"),
             review_count=Count("reviews", distinct=True),
         )

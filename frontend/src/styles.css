@@ -2082,3 +2082,76 @@ button, .button, .smallButton, .statusPill, .subcategoryChip, .kindTabs button, 
 [data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea { background: var(--card); color: var(--on-surface); border-color: var(--outline-variant); }
 
 @media (max-width: 1000px) { .topbar nav { gap: 12px; } .topbar .brand { margin-right: 12px; } }
+
+/* ---------- Discovery: the two main types ---------- */
+.mainKinds { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 10px; }
+.mainKinds button { display: grid; gap: 2px; padding: 12px 16px; border: 1px solid var(--outline-variant); border-radius: 16px; background: var(--card); color: var(--on-surface); text-align: left; cursor: pointer; transition: border-color var(--motion-short) var(--ease-standard), background var(--motion-short) var(--ease-standard); }
+.mainKinds button b { font-family: var(--font-ui); font-size: 16px; }
+.mainKinds button small { color: var(--on-surface-variant); font-size: 12.5px; line-height: 1.35; }
+.mainKinds button:hover { border-color: var(--primary-light); }
+.mainKinds button.on { border-color: var(--primary); background: var(--primary-container); box-shadow: inset 0 0 0 1px var(--primary); }
+.mainKinds button.on b { color: var(--primary); }
+@media (max-width: 560px) { .mainKinds { grid-template-columns: 1fr 1fr; width: 100%; } }
+
+/* Cards: offer ribbon, masked number for guests */
+.bizOffer { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 64px); overflow: hidden; padding: 4px 10px; border-radius: 999px; background: var(--marigold); color: var(--on-marigold); font-family: var(--font-ui); font-size: 12px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+.bizMasked { display: block; margin-top: 6px; color: var(--on-surface-variant); font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .02em; }
+.lpReadMore { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--indigo); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+/* ---------- Landing (/sobo) ---------- */
+.land { overflow-x: clip; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: center; gap: 32px; max-width: 1180px; margin: 0 auto; padding: 48px 24px 32px; min-height: calc(100vh - 120px); }
+.landChip { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 6px 12px; border-radius: 999px; background: var(--primary-container); color: var(--on-primary-container); font-family: var(--font-ui); font-size: 13px; font-weight: 700; }
+.landCopy h1 { margin: 0; font-family: var(--font-display); font-size: clamp(38px, 5.4vw, 64px); font-weight: 700; line-height: 1.08; letter-spacing: -.02em; color: var(--on-surface); }
+.landCopy h1 em { display: block; color: var(--primary); font-style: normal; }
+.landSub { max-width: 34em; margin: 18px 0 26px; color: var(--on-surface-variant); font-size: 18px; line-height: 1.55; }
+.landCtas { display: flex; flex-wrap: wrap; gap: 12px; }
+.landBtn { display: inline-flex; align-items: center; gap: 8px; min-height: 50px; padding: 0 22px; border: 1px solid var(--outline); border-radius: 999px; background: var(--card); color: var(--on-surface); font-family: var(--font-ui); font-size: 16px; font-weight: 700; cursor: pointer; transition: background var(--motion-short) var(--ease-standard), transform var(--motion-short) var(--ease-standard); }
+.landBtn:hover { transform: translateY(-1px); }
+.landBtn.primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.landBtn.primary:hover { background: #1F613B; }
+.landFine { margin: 16px 0 0; color: var(--on-surface-variant); font-size: 13.5px; }
+
+.orb { position: relative; display: grid; place-items: center; width: 100%; max-width: 460px; aspect-ratio: 1; margin: 0 auto; }
+.orb::before { content: ""; position: absolute; inset: 6%; border-radius: 50%; background: radial-gradient(circle, var(--primary-container) 0 52%, transparent 53%); }
+.orbRing { position: absolute; left: 50%; top: 50%; translate: -50% -50%; border: 1.5px dashed var(--primary-container-deep); border-radius: 50%; }
+.orbChip { position: absolute; display: grid; place-items: center; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--card); color: var(--primary); box-shadow: 0 8px 22px var(--shadow-tint), inset 0 0 0 1px var(--outline-variant); }
+.orbRing:nth-child(2) .orbChip { color: #8F5A00; background: #FEF3E1; }
+.orbCore { position: relative; display: grid; place-items: center; width: 132px; height: 132px; border-radius: 50%; background: var(--card); box-shadow: 0 14px 40px var(--shadow-tint), inset 0 0 0 1px var(--outline-variant); }
+
+.landTwo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.landCard { padding: 26px; border-radius: 22px; background: var(--card); box-shadow: inset 0 0 0 1px var(--outline-variant); }
+.landCard.owner { background: var(--primary-container); }
+.landCardIcon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--primary); color: var(--on-primary); }
+.landCard h2 { margin: 14px 0 12px; font-family: var(--font-ui); font-size: 22px; }
+.landCard ul, .landPlan ul { display: grid; gap: 10px; margin: 0 0 18px; padding: 0; list-style: none; }
+.landCard li, .landPlan li { display: flex; align-items: flex-start; gap: 10px; color: var(--on-surface); }
+.landCard li svg, .landPlan li svg { flex: none; margin-top: 3px; color: var(--primary); }
+.landLink { padding: 0; border: 0; background: none; color: var(--indigo); font: inherit; font-weight: 700; cursor: pointer; }
+
+.landSteps h2, .landPricing h2, .landEnd h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: clamp(26px, 3vw, 34px); }
+.landSteps ol { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 18px 0 0; padding: 0; list-style: none; }
+.landSteps li { position: relative; display: grid; gap: 8px; padding: 22px; border-radius: 20px; background: var(--card); color: var(--primary); box-shadow: inset 0 0 0 1px var(--outline-variant); }
+.landSteps li b { color: var(--on-surface); font-family: var(--font-ui); font-size: 17px; }
+.landSteps li p { margin: 0; color: var(--on-surface-variant); }
+.landStepNo { position: absolute; top: 16px; right: 18px; color: var(--outline); font-family: var(--font-mono); font-size: 13px; }
+
+.landPlans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 18px; }
+.landPlan { padding: 24px; border-radius: 22px; background: var(--card); box-shadow: inset 0 0 0 1px var(--outline-variant); }
+.landPlan.pick { box-shadow: inset 0 0 0 2px var(--primary); }
+.landPlan h3 { margin: 0; font-family: var(--font-ui); font-size: 18px; }
+.landPrice { margin: 10px 0 2px; }
+.landPrice b { font-family: var(--font-ui); font-size: 34px; color: var(--on-surface); }
+.landPrice span { margin-left: 4px; color: var(--on-surface-variant); }
+.landGst { margin: 0 0 16px; color: var(--on-surface-variant); font-size: 13.5px; }
+.landEnd { text-align: center; }
+.landEnd .landCtas { justify-content: center; margin-top: 18px; }
+
+@media (max-width: 900px) {
+  .land { grid-template-columns: minmax(0, 1fr); min-height: 0; padding-top: 24px; text-align: left; }
+  .orb { width: 460px; max-width: none; transform: scale(.7); margin: -60px auto -50px; }
+  .land { overflow: hidden; }
+  .landTwo, .landSteps ol, .landPlans { grid-template-columns: 1fr; }
+}
+
+.orbWrap { display: flex; justify-content: center; min-width: 0; overflow: hidden; }
+.orbWrap .orb { flex: none; }

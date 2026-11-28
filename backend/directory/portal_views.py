@@ -202,6 +202,28 @@ class OwnerPostsView(APIView):
         return Response(BusinessPostSerializer(post).data, status=status.HTTP_201_CREATED)
 
 
+PLAN_ORDER = {"free": 0, "pro": 1, "premium": 2}
+
+
+class PublicPlansView(APIView):
+    """Active plans with GST added on top, for the landing and pricing pages."""
+
+    authentication_classes = ()
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        from billing.models import GST_PERCENT, with_gst
+
+        rows = sorted(PlanPrice.objects.filter(active=True), key=lambda row: PLAN_ORDER.get(row.plan, 9))
+        return Response({
+            "gst_percent": GST_PERCENT,
+            "plans": [
+                {"plan": row.plan, "monthly_price": row.monthly_price, "monthly_total": with_gst(row.monthly_price)}
+                for row in rows
+            ],
+        })
+
+
 class OwnerPlansView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
