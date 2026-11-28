@@ -856,8 +856,11 @@ class OwnerToolsTests(TestCase):
         BusinessPost.objects.create(business=self.business, title="Live", status="approved", expires_on=today + timedelta(days=3))
         BusinessPost.objects.create(business=self.business, title="Expired", status="approved", expires_on=today - timedelta(days=1))
         BusinessPost.objects.create(business=self.business, title="Pending", status="pending")
+        BusinessPost.objects.create(business=self.business, title="Later", status="approved", starts_on=today + timedelta(days=2))
         titles = [row["title"] for row in APIClient().get("/api/businesses/tools-shop/offers/").json()]
         self.assertEqual(titles, ["Live"])
+        self.business.plan = "pro"  # Free allows one active offer; this listing already has more
+        self.business.save()
         self.client.force_authenticate(self.owner)
         created = self.client.post("/api/owner/posts/", {"business_id": str(self.business.id), "title": "New", "body": "x", "expires_on": str(today)}, format="json")
         self.assertEqual(created.status_code, 201, created.content)
@@ -1138,3 +1141,57 @@ class PublicPlansTests(TestCase):
         by_plan = {row["plan"]: row for row in data["plans"]}
         self.assertEqual(by_plan["pro"]["monthly_total"], 588.82)
         self.assertEqual(by_plan["premium"]["monthly_total"], 2358.82)
+
+
+@override_settings(MEDIA_ROOT=_PHOTO_MEDIA)
+class PhaseCOwnerTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner-c", password="x", email="c@example.test")
+        self.business = Business.objects.create(name="Tailor", slug="tailor-c", kind="service", source="owner", hidden=True)
+        self.business.members.create(user=self.owner, role="owner")
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+
+    def test_visit_options_and_gst_saved_and_gst_private(self):
+        response = self.client.patch(f"/api/businesses/{self.business.slug}/", {
+            "home_visit": True, "onsite_visit": True, "gst_number": "24abcde1234f1z5",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.business.refresh_from_db()
+        self.assertTrue(self.business.home_visit)
+        self.assertEqual(self.business.gst_number, "24ABCDE1234F1Z5")
+        bad = self.client.patch(f"/api/businesses/{self.business.slug}/", {"gst_number": "123"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        self.business.hidden = False
+        self.business.save()
+        public = APIClient().get(f"/api/businesses/{self.business.slug}/").json()
+        self.assertNotIn("gst_number", public)
+        self.assertTrue(public["home_visit"])
+
+    def test_offer_limit_edit_and_delete(self):
+        first = self.client.post("/api/owner/posts/", {"business_id": str(self.business.id), "title": "10% off", "body": "Diwali"}, format="json")
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post("/api/owner/posts/", {"business_id": str(self.business.id), "title": "Another", "body": "x"}, format="json")
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()["code"], "offer_limit")
+        post_id = first.json()["id"]
+        BusinessPost.objects.filter(id=post_id).update(status="approved")
+        edited = self.client.patch(f"/api/owner/posts/{post_id}/", {"title": "15% off", "starts_on": "2026-12-01", "expires_on": "2026-12-10"}, format="json")
+        self.assertEqual(edited.status_code, 200, edited.content)
+        self.assertEqual(edited.json()["status"], "pending")
+        backwards = self.client.patch(f"/api/owner/posts/{post_id}/", {"starts_on": "2026-12-10", "expires_on": "2026-12-01"}, format="json")
+        self.assertEqual(backwards.status_code, 400)
+        stranger = APIClient()
+        stranger.force_authenticate(User.objects.create_user(username="stranger-c", password="x"))
+        self.assertEqual(stranger.delete(f"/api/owner/posts/{post_id}/").status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/owner/posts/{post_id}/").status_code, 204)
+        self.assertFalse(BusinessPost.objects.filter(id=post_id).exists())
+
+    def test_avatar_upload_and_remove(self):
+        response = self.client.post("/api/me/avatar/", {"file": _image_file("me.png", "PNG")}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(self.client.get("/api/auth/me/").json()["avatar"])
+        self.assertEqual(self.client.delete("/api/me/avatar/").status_code, 204)
+        self.assertEqual(self.client.get("/api/auth/me/").json()["avatar"], "")
+        bad = self.client.post("/api/me/avatar/", {"file": SimpleUploadedFile("x.txt", b"hello")}, format="multipart")
+        self.assertEqual(bad.status_code, 400)

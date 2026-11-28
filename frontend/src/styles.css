@@ -2155,3 +2155,48 @@ button, .button, .smallButton, .statusPill, .subcategoryChip, .kindTabs button, 
 
 .orbWrap { display: flex; justify-content: center; min-width: 0; overflow: hidden; }
 .orbWrap .orb { flex: none; }
+
+/* ---------- Owner onboarding wizard ---------- */
+.obPlans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 8px 0 12px; }
+.obPlans button { display: grid; gap: 4px; padding: 16px; border: 1px solid var(--outline-variant); border-radius: 16px; background: var(--card); color: var(--on-surface); text-align: left; cursor: pointer; }
+.obPlans button b { font-family: var(--font-ui); font-size: 17px; }
+.obPlans button.on { border-color: var(--primary); background: var(--primary-container); box-shadow: inset 0 0 0 1px var(--primary); }
+.obPrice { font-family: var(--font-ui); font-size: 24px; font-weight: 800; }
+.obPrice small, .obPlans button small { color: var(--on-surface-variant); font-size: 12.5px; font-weight: 500; }
+.obTag { margin-top: 4px; }
+.obNote { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--warning-container); color: var(--on-warning-container); font-size: 14px; }
+.obVisits { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--outline-variant); border-radius: 12px; }
+.obVisits legend { padding: 0 6px; font-weight: 700; }
+.obPhotos { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; }
+.obPhotos figure { display: grid; gap: 6px; width: 150px; margin: 0; }
+.obPhotos img { width: 150px; height: 110px; border-radius: 12px; object-fit: cover; }
+.obPick { position: relative; display: grid; place-items: center; align-content: center; gap: 6px; width: 150px; height: 110px; border: 1.5px dashed var(--outline); border-radius: 12px; color: var(--primary); font-weight: 700; cursor: pointer; }
+.obPick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.obReview { margin: 8px 0 12px; }
+
+/* Approval requests */
+.apList { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.apTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.apTop h3 { margin: 0; font-family: var(--font-ui); font-size: 17px; }
+.apNote { display: flex; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--warning-container); color: var(--on-warning-container); }
+.apNote p { margin: 2px 0 0; }
+.apActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.odBtn.danger { color: var(--error); border-color: var(--error); }
+
+/* Offers */
+.ofDates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ofTabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ofTabs button { padding: 4px 10px; border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--card); color: var(--on-surface-variant); font-size: 13px; cursor: pointer; }
+.ofTabs button.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
+
+/* Profile picture */
+.avPick { display: flex; align-items: center; gap: 14px; margin: 4px 0 14px; }
+.avBig { display: grid; place-items: center; width: 64px; height: 64px; overflow: hidden; border-radius: 50%; background: var(--primary-container); color: var(--primary); font-family: var(--font-ui); font-size: 26px; font-weight: 800; }
+.avBig img, .odAvatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.avPick .apActions { margin-top: 6px; }
+.odAvatar { overflow: hidden; }
+
+@media (max-width: 680px) {
+  .obPlans { grid-template-columns: 1fr; }
+  .ofDates { grid-template-columns: 1fr; }
+}

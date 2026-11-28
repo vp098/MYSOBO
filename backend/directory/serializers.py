@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
@@ -343,11 +345,12 @@ def active_offers(queryset):
     today = timezone.localdate()
     return queryset.filter(status=BusinessPost.Status.APPROVED).filter(
         Q(expires_on__isnull=True) | Q(expires_on__gte=today)
-    ).order_by("-created_at")
+    ).filter(Q(starts_on__isnull=True) | Q(starts_on__lte=today)).order_by("-created_at")
 
 
 CONTACT_FIELDS = ("phone", "whatsapp", "email")
 GUEST_DESCRIPTION_CHARS = 120
+GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def shorten(text, limit=GUEST_DESCRIPTION_CHARS):
@@ -405,7 +408,7 @@ class BusinessSerializer(serializers.ModelSerializer):
         fields = (
             "id", "slug", "name", "kind", "category", "subcategory", "category_id",
             "subcategory_id", "description", "category_data", "phone", "whatsapp",
-            "email", "website", "logo", "cover_image", "address",
+            "email", "website", "home_visit", "onsite_visit", "gst_number", "logo", "cover_image", "address",
             "hide_address", "lat", "lng", "society", "specialties", "photos", "hours",
             "average_rating", "review_count", "verified", "offer",
             "verification_level", "source", "hidden", "plan", "plan_expires_on",
@@ -510,6 +513,12 @@ class BusinessSerializer(serializers.ModelSerializer):
     def get_hours(self, instance):
         return BusinessHourSerializer(instance.hours.all(), many=True).data
 
+    def validate_gst_number(self, value):
+        value = (value or "").strip().upper()
+        if value and not GSTIN_RE.match(value):
+            raise serializers.ValidationError("Enter a valid 15-character GST number, like 24ABCDE1234F1Z5.")
+        return value
+
     def get_offer(self, instance):
         """The newest approved offer that has not expired, for the listing card."""
         offers = getattr(instance, "active_offers", None)
@@ -534,6 +543,7 @@ class BusinessSerializer(serializers.ModelSerializer):
             data["address"] = None
         if not privileged:
             for field in (
+                "gst_number",
                 "verification_level",
                 "source",
                 "hidden",
@@ -723,5 +733,12 @@ class ReviewSerializer(serializers.ModelSerializer):
 class BusinessPostSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessPost
-        fields = ("id", "business", "title", "body", "image_path", "expires_on", "status", "created_at")
+        fields = ("id", "business", "title", "body", "image_path", "starts_on", "expires_on", "status", "created_at")
         read_only_fields = ("id", "status", "created_at")
+
+    def validate(self, attrs):
+        starts = attrs.get("starts_on", getattr(self.instance, "starts_on", None))
+        ends = attrs.get("expires_on", getattr(self.instance, "expires_on", None))
+        if starts and ends and ends < starts:
+            raise serializers.ValidationError({"expires_on": "The end date must be on or after the start date."})
+        return attrs

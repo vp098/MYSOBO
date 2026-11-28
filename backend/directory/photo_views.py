@@ -27,7 +27,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_EDGE = 2000
 MAX_PIXELS = 40_000_000
 MAX_FILES_PER_REQUEST = 10
-PHOTO_LIMITS = {Business.Plan.FREE: 3, Business.Plan.PRO: 20, Business.Plan.PREMIUM: 100}
+from billing.limits import PHOTO_LIMITS  # noqa: E402  (shared with offers)
 
 
 class PhotoError(ValueError):

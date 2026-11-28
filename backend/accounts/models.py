@@ -26,6 +26,7 @@ class Profile(models.Model):
     consent_at = models.DateTimeField(null=True, blank=True)
     consent_version = models.CharField(max_length=32, blank=True)
     whatsapp_alerts = models.BooleanField(default=True)
+    avatar = models.FileField(upload_to="avatars/", blank=True, default="", db_default="")
 
     class AccountType(models.TextChoices):
         RESIDENT = "resident", "Resident"
