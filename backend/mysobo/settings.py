@@ -155,6 +155,7 @@ INSTALLED_APPS = [
     "accounts",
     "directory",
     "billing",
+    "support",
 ]
 
 
@@ -486,6 +487,7 @@ REST_FRAMEWORK = {
         "demo_login": "20/min",
         "photo_upload": "60/hour",
         "email_auth": "20/min",
+        "support": "20/hour",
     },
 }
 

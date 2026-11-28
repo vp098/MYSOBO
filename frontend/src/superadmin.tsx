@@ -6,6 +6,7 @@ import { BusinessForm, CategoryManager, Shell, categoryDataFromForm } from "./Ap
 import { coverFor } from "./covers";
 import { LeafMark } from "./logo";
 import { AdminInvoices, AdminPricing, type AdminPlan } from "./adminBilling";
+import { AdminTickets, type Ticket } from "./support";
 import { DashTabbar, useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
 
@@ -27,6 +28,7 @@ type Settings = { grace_period_days: number; free_pro_cap: number; approval_sla_
 type Dashboard = { businesses: number; verified: number; pending_approvals: number; pending_claims: number; pending_posts: number; pending_plan_requests: number; pending_reports: number; revenue_paise: number };
 
 const ICONS: Record<string, ReactNode> = {
+  chat: <><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" /></>,
   more: <><circle cx="6" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="18" cy="12" r="1.4" fill="currentColor" /></>,
   grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
   shield: <><path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6z" /><path d="m9 12 2.2 2.2L15.5 10" /></>,
@@ -87,6 +89,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
   const reports = q<ReportRow[]>("admin-reports", "/admin/reports/").data ?? [];
   const audit = q<AuditRow[]>("admin-audit", "/admin/audit/").data ?? [];
   const settings = q<Settings>("admin-settings", "/admin/settings/").data;
+  const activeTickets = q<Ticket[]>("admin-tickets-badge", "/admin/tickets/?status=active").data ?? [];
 
   async function run(action: () => Promise<unknown>, success: string) {
     setError("");
@@ -122,6 +125,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
     { path: "pricing", label: "Pricing management", icon: "rupee" },
     { path: "payments", label: "Payments & invoices", icon: "receipt" },
     { path: "reports", label: "Reports & complaints", icon: "flag", badge: openReports.length },
+    { path: "support", label: "Support tickets", icon: "chat", badge: activeTickets.filter((item) => item.status === "open").length },
     { path: "audit", label: "Admin activity / audit", icon: "clock" },
     { path: "settings", label: "Settings", icon: "gear" },
   ];
@@ -210,6 +214,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "payments" && <><AdminInvoices run={run} /><PaymentLedger payments={payments} /></>}
           {active.path === "reports" && <Reports reports={reports} run={run} />}
           {active.path === "audit" && <><SaHead title="Admin activity / audit history" copy="Every approval, rejection, payment and settings change, newest first." /><section className="odCard"><AuditList rows={audit} /></section></>}
+          {active.path === "support" && <AdminTickets />}
           {active.path === "settings" && <><SettingsForm settings={settings} run={run} /><section className="odCard saTheme"><ThemePicker user={user} /></section></>}
         </div>
       </div>
