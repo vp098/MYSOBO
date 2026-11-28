@@ -986,4 +986,10 @@ class HealthView(APIView):
                 cursor.fetchone()
         except Exception:  # noqa: BLE001 - any failure means "not healthy"
             return Response({"status": "degraded", "database": "unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        return Response({"status": "ok", "database": "ok"})
+        from django.conf import settings as django_settings
+        return Response({
+            "status": "ok", "database": "ok",
+            "media_uploads": bool(getattr(django_settings, "MEDIA_UPLOADS_ENABLED", True)),
+            "storage_problem": getattr(django_settings, "STORAGE_PROBLEM", ""),
+            "google_sign_in": bool(django_settings.GOOGLE_CLIENT_ID),
+        })

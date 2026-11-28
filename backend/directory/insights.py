@@ -12,7 +12,7 @@ from accounts.models import AdminRole, Profile
 from billing.models import Invoice, SubscriptionRequest
 from support.models import Ticket
 
-from .models import AuditLog, Business, BusinessPost, Category, Claim, Event, Report, Review, SavedBusiness, Subcategory
+from .models import AuditLog, Business, BusinessPost, BusinessProduct, BusinessService, Category, Claim, Event, Report, Review, SavedBusiness, Subcategory
 from .permissions import IsSuperAdmin
 from .serializers import active_offers
 
@@ -64,6 +64,8 @@ class AdminOverviewView(APIView):
                 "verified": live.filter(verification_level__gte=2).count(), "new_7d": alive.filter(created_at__gte=week).count(),
                 "service": alive.filter(kind="service").count(), "product": alive.filter(kind="product").count(),
                 "both": alive.filter(kind="both").count(),
+                "services": BusinessService.objects.filter(active=True, business__deleted_at__isnull=True).count(),
+                "products": BusinessProduct.objects.filter(active=True, business__deleted_at__isnull=True).count(),
             },
             "verification": {
                 "waiting": waiting.count(),
@@ -158,6 +160,8 @@ class AdminUsersView(APIView):
             rows.append({
                 "id": str(user.id), "name": _name(user), "email": user.email, "mobile": user.mobile or "",
                 "account_type": "admin" if user.id in admins else (profile.account_type if profile else "resident"),
+                "profile_type": profile.account_type if profile else "resident",
+                "super_admin": user.id in admins,
                 "businesses": user.businesses, "tickets_open": user.tickets_open,
                 "joined": user.date_joined, "last_login": user.last_login, "active": user.is_active,
             })

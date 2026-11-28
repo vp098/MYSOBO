@@ -8,6 +8,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from accounts.views import AuthConfigView, DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
 from support.views import AdminTicketActionView, AdminTicketsView, TicketDetailView, TicketReplyView, TicketsView
 from directory.views import SearchSuggestView
+from directory.manage_views import AdminCatalogItemView, AdminCatalogView, AdminUserUpdateView, OwnerCatalogItemView, OwnerCatalogView
 from directory.insights import AdminOverviewView, AdminUsersView, MyActivityView, MyProfileView, OffersFeedView
 from billing.views import AdminInvoicePayView, AdminInvoicesView, BillingCronView, InvoicePdfView, OwnerInvoicesView
 from directory.portal_views import (
@@ -73,6 +74,11 @@ urlpatterns = [
     path("api/me/profile/", MyProfileView.as_view(), name="me-profile"),
     path("api/admin/overview/", AdminOverviewView.as_view(), name="admin-overview"),
     path("api/admin/users/", AdminUsersView.as_view(), name="admin-users"),
+    path("api/admin/users/<uuid:user_id>/", AdminUserUpdateView.as_view(), name="admin-user-update"),
+    path("api/admin/catalog/", AdminCatalogView.as_view(), name="admin-catalog"),
+    path("api/admin/catalog/<str:kind>/<uuid:item_id>/", AdminCatalogItemView.as_view(), name="admin-catalog-item"),
+    path("api/owner/catalog/", OwnerCatalogView.as_view(), name="owner-catalog"),
+    path("api/owner/catalog/<str:kind>/<uuid:item_id>/", OwnerCatalogItemView.as_view(), name="owner-catalog-item"),
     path("api/support/tickets/", TicketsView.as_view(), name="support-tickets"),
     path("api/support/tickets/<uuid:ticket_id>/", TicketDetailView.as_view(), name="support-ticket"),
     path("api/support/tickets/<uuid:ticket_id>/reply/", TicketReplyView.as_view(), name="support-ticket-reply"),

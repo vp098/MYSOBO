@@ -887,7 +887,10 @@ class ResilienceTests(TestCase):
     def test_health_endpoint(self):
         response = APIClient().get("/api/health/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "database": "ok"})
+        data = response.json()
+        self.assertEqual((data["status"], data["database"]), ("ok", "ok"))
+        self.assertIn("media_uploads", data)
+        self.assertIn("google_sign_in", data)
 
     def test_handler_turns_database_errors_into_json(self):
         from django.db import DatabaseError, IntegrityError, OperationalError
@@ -1317,3 +1320,60 @@ class SmartSearchTests(TestCase):
         self.assertEqual([row["name"] for row in data["businesses"]], ["Glow Studio"])
         self.assertIn("Salons", [row["name"] for row in data["subcategories"]])
         self.assertEqual(self.client.get("/api/search/suggest/", {"q": "a"}).json()["businesses"], [])
+
+
+
+class ManagementTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="m-admin", password="x", email="m-admin@example.test")
+        AdminRole.objects.create(user=self.admin, role=AdminRole.Role.SUPER_ADMIN)
+        self.owner = User.objects.create_user(username="m-owner", password="x", email="m-owner@example.test")
+        self.other = User.objects.create_user(username="m-other", password="x", email="m-other@example.test")
+        self.category = Category.objects.create(name="Home services", slug="home-services-m", supports_services=True, supports_products=True)
+        self.business = Business.objects.create(name="Fix It", slug="fix-it", kind="both", source="owner", category=self.category)
+        self.business.members.create(user=self.owner, role="owner")
+        self.service = BusinessService.objects.create(business=self.business, category=self.category, name="Fan repair", price_min=100)
+        self.product = BusinessProduct.objects.create(business=self.business, category=self.category, name="Ceiling fan", price=1500)
+        self.staff = APIClient(); self.staff.force_authenticate(self.admin)
+        self.client = APIClient(); self.client.force_authenticate(self.owner)
+
+    def test_owner_manages_own_catalog_only(self):
+        rows = self.client.get(f"/api/owner/catalog/?business_id={self.business.id}").json()
+        self.assertEqual(sorted(row["name"] for row in rows), ["Ceiling fan", "Fan repair"])
+        off = self.client.patch(f"/api/owner/catalog/service/{self.service.id}/", {"active": False, "price_min": "150"}, format="json")
+        self.assertEqual(off.status_code, 200, off.content)
+        self.service.refresh_from_db()
+        self.assertFalse(self.service.active)
+        self.assertEqual(str(self.service.price_min), "150.00")
+        # Still listed for the owner so it can be switched back on
+        self.assertEqual(len(self.client.get(f"/api/owner/catalog/?business_id={self.business.id}").json()), 2)
+        self.assertEqual(self.client.patch(f"/api/owner/catalog/product/{self.product.id}/", {"price": "-1"}, format="json").status_code, 400)
+        intruder = APIClient(); intruder.force_authenticate(self.other)
+        self.assertEqual(intruder.get(f"/api/owner/catalog/?business_id={self.business.id}").status_code, 404)
+        self.assertEqual(intruder.patch(f"/api/owner/catalog/service/{self.service.id}/", {"active": True}, format="json").status_code, 404)
+        self.assertEqual(intruder.delete(f"/api/owner/catalog/product/{self.product.id}/").status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/owner/catalog/product/{self.product.id}/").status_code, 204)
+
+    def test_admin_catalog_moderation(self):
+        rows = self.staff.get("/api/admin/catalog/?type=service&q=fan").json()
+        self.assertEqual([row["name"] for row in rows], ["Fan repair"])
+        off = self.staff.patch(f"/api/admin/catalog/product/{self.product.id}/", {"active": False}, format="json")
+        self.assertEqual(off.status_code, 200)
+        self.assertEqual(self.staff.get("/api/admin/catalog/?status=inactive").json()[0]["name"], "Ceiling fan")
+        self.assertEqual(self.client.get("/api/admin/catalog/").status_code, 403)
+        self.assertEqual(self.client.patch(f"/api/admin/catalog/product/{self.product.id}/", {"active": True}, format="json").status_code, 403)
+
+    def test_admin_user_management(self):
+        url = f"/api/admin/users/{self.other.id}/"
+        self.assertEqual(self.staff.patch(url, {"active": False}, format="json").status_code, 200)
+        self.other.refresh_from_db()
+        self.assertFalse(self.other.is_active)
+        self.assertEqual(self.staff.patch(url, {"super_admin": True}, format="json").status_code, 200)
+        self.assertTrue(AdminRole.objects.filter(user=self.other, role="super_admin").exists())
+        self.assertEqual(self.staff.patch(url, {"account_type": "business_owner"}, format="json").status_code, 200)
+        me = f"/api/admin/users/{self.admin.id}/"
+        self.assertEqual(self.staff.patch(me, {"active": False}, format="json").status_code, 400)
+        self.assertEqual(self.staff.patch(me, {"super_admin": False}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(url, {"active": True}, format="json").status_code, 403)
+        overview = self.staff.get("/api/admin/overview/").json()
+        self.assertEqual((overview["businesses"]["services"], overview["businesses"]["products"]), (1, 1))
