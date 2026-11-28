@@ -358,45 +358,43 @@ supabase_storage_values = {
     "secret_key": env("SUPABASE_S3_SECRET_ACCESS_KEY"),
 }
 supabase_storage_configured = any(supabase_storage_values.values())
-supabase_storage_missing = [
-    name for name, value in supabase_storage_values.items() if not value
-]
+supabase_storage_missing = [name for name, value in supabase_storage_values.items() if not value]
 
-# With none of the Storage settings in production, the site still starts:
-# uploads answer 503 "not set up yet" (MEDIA_UPLOADS_ENABLED = False) instead
-# of the whole backend failing. A partial or wrong configuration still stops
-# startup so mistakes are caught.
-MEDIA_UPLOADS_ENABLED = bool(DEBUG or IS_CI or supabase_storage_configured)
 
+def _supabase_project_ref(raw_url):
+    """Project ref from SUPABASE_URL. Accepts https://<ref>.supabase.co with or
+    without a trailing path (/rest/v1, /storage/v1, ...) or without https://."""
+    value = (raw_url or "").strip()
+    if value and "://" not in value:
+        value = f"https://{value}"
+    host = (urlparse(value).hostname or "").lower()
+    if not host.endswith(".supabase.co"):
+        return None
+    labels = [label for label in host.removesuffix(".supabase.co").split(".") if label not in ("db", "storage", "pooler", "www")]
+    return labels[0] if labels else None
+
+
+# Media storage problems never stop the whole site. Without a working Storage
+# setup, uploads answer 503 "not set up yet" and STORAGE_PROBLEM says why
+# (setting names only, never values); /api/health/ reports it.
+STORAGE_PROBLEM = ""
+supabase_project_ref = None
 if supabase_storage_configured:
     if supabase_storage_missing:
-        raise ImproperlyConfigured(
-            "Supabase media storage is missing required settings: "
-            + ", ".join(supabase_storage_missing)
-        )
+        STORAGE_PROBLEM = "Supabase Storage is missing: " + ", ".join(supabase_storage_missing)
+    else:
+        supabase_project_ref = _supabase_project_ref(supabase_storage_values["url"])
+        if not supabase_project_ref:
+            STORAGE_PROBLEM = "SUPABASE_URL must look like https://<project>.supabase.co"
+elif not DEBUG and not IS_CI:
+    STORAGE_PROBLEM = "Supabase Storage is not configured"
 
-    supabase_url = urlparse(supabase_storage_values["url"])
-    if (
-        supabase_url.scheme != "https"
-        or not supabase_url.hostname
-        or not supabase_url.hostname.endswith(".supabase.co")
-        or supabase_url.path not in ("", "/")
-        or supabase_url.query
-        or supabase_url.fragment
-    ):
-        raise ImproperlyConfigured(
-            "SUPABASE_URL must be an HTTPS Supabase project URL."
-        )
+MEDIA_UPLOADS_ENABLED = bool(DEBUG or IS_CI or supabase_project_ref)
 
-    supabase_project_ref = supabase_url.hostname.removesuffix(".supabase.co")
-    if not supabase_project_ref:
-        raise ImproperlyConfigured(
-            "SUPABASE_URL must include a Supabase project reference."
-        )
-
+if supabase_project_ref:
     supabase_bucket = supabase_storage_values["bucket"]
     supabase_public_domain = (
-        f"{supabase_url.hostname}/storage/v1/object/public/{supabase_bucket}"
+        f"{supabase_project_ref}.supabase.co/storage/v1/object/public/{supabase_bucket}"
     )
     default_storage = {
         "BACKEND": "storages.backends.s3.S3Storage",
