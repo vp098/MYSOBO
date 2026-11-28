@@ -1199,3 +1199,69 @@ class PhaseCOwnerTests(TestCase):
         self.assertEqual(self.client.get("/api/auth/me/").json()["avatar"], "")
         bad = self.client.post("/api/me/avatar/", {"file": SimpleUploadedFile("x.txt", b"hello")}, format="multipart")
         self.assertEqual(bad.status_code, 400)
+
+
+class PhaseFInsightTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="f-admin", password="x", first_name="Nisha")
+        AdminRole.objects.create(user=self.admin, role=AdminRole.Role.SUPER_ADMIN)
+        self.owner = User.objects.create_user(username="f-owner", password="x", email="owner-f@example.test")
+        self.resident = User.objects.create_user(username="f-res", password="x", first_name="Hetal", email="hetal@example.test")
+        self.live = Business.objects.create(name="Live Shop", slug="live-shop", kind="product", source="owner", plan="pro")
+        self.live.members.create(user=self.owner, role="owner")
+        self.hidden = Business.objects.create(name="Hidden", slug="hidden-f", kind="service", source="owner", hidden=True,
+                                              approval_requested_at=timezone.now())
+        today = timezone.localdate()
+        BusinessPost.objects.create(business=self.live, title="Live offer", status="approved", expires_on=today + timedelta(days=5))
+        BusinessPost.objects.create(business=self.live, title="Old", status="approved", expires_on=today - timedelta(days=1))
+        BusinessPost.objects.create(business=self.hidden, title="On hidden", status="approved")
+        self.staff = APIClient()
+        self.staff.force_authenticate(self.admin)
+
+    def test_overview_counts_real_rows(self):
+        data = self.staff.get("/api/admin/overview/").json()
+        self.assertEqual(len([key for key in data if key != "generated_at"]), 10)
+        self.assertEqual(data["businesses"]["total"], 2)
+        self.assertEqual(data["businesses"]["live"], 1)
+        self.assertEqual(data["verification"]["waiting"], 1)
+        self.assertEqual(data["offers"]["live"], 1)
+        self.assertEqual(data["offers"]["expired"], 1)
+        self.assertEqual(data["plans"]["pro"], 1)
+        self.assertEqual(data["users"]["admins"], 1)
+        self.assertEqual(data["users"]["owners"], 1)
+        self.assertEqual(data["users"]["residents"], 1)
+        self.assertEqual(data["billing"]["outstanding_paise"], 0)
+        resident = APIClient()
+        resident.force_authenticate(self.resident)
+        self.assertEqual(resident.get("/api/admin/overview/").status_code, 403)
+        self.assertEqual(resident.get("/api/admin/users/").status_code, 403)
+
+    def test_admin_users_search_and_filter(self):
+        rows = self.staff.get("/api/admin/users/?q=hetal").json()
+        self.assertEqual([row["name"] for row in rows], ["Hetal"])
+        owners = self.staff.get("/api/admin/users/?type=business_owner").json()
+        self.assertEqual([row["email"] for row in owners], ["owner-f@example.test"])
+        self.assertEqual(owners[0]["businesses"], 1)
+        self.assertEqual(len(self.staff.get("/api/admin/users/?type=admin").json()), 1)
+
+    def test_offers_feed_only_live(self):
+        titles = [row["title"] for row in APIClient().get("/api/offers/").json()]
+        self.assertEqual(titles, ["Live offer"])
+        client = APIClient()
+        client.force_authenticate(self.resident)
+        self.assertEqual(client.get("/api/offers/?saved=1").json(), [])
+        client.post("/api/businesses/live-shop/saved/")
+        self.assertEqual([row["title"] for row in client.get("/api/offers/?saved=1").json()], ["Live offer"])
+
+    def test_activity_and_profile(self):
+        client = APIClient()
+        client.force_authenticate(self.resident)
+        client.post("/api/businesses/live-shop/saved/")
+        client.post("/api/support/tickets/", {"plan": "resident", "category": "other", "subject": "Hello there",
+                                              "description": "Just checking the help desk."}, format="json")
+        types = {row["type"] for row in client.get("/api/me/activity/").json()}
+        self.assertEqual(types, {"saved", "ticket"})
+        self.assertEqual(client.patch("/api/me/profile/", {"name": "x"}, format="json").status_code, 400)
+        self.assertEqual(client.patch("/api/me/profile/", {"name": "Hetal  Shah"}, format="json").json()["name"], "Hetal Shah")
+        self.resident.refresh_from_db()
+        self.assertEqual(self.resident.last_name, "Shah")

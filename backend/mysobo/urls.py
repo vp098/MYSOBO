@@ -7,6 +7,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 from accounts.views import DemoEmailLoginView, EmailLoginView, EmailRegisterView, GoogleLoginView, OTPRequestView, OTPVerifyView
 from support.views import AdminTicketActionView, AdminTicketsView, TicketDetailView, TicketReplyView, TicketsView
+from directory.insights import AdminOverviewView, AdminUsersView, MyActivityView, MyProfileView, OffersFeedView
 from billing.views import AdminInvoicePayView, AdminInvoicesView, BillingCronView, InvoicePdfView, OwnerInvoicesView
 from directory.portal_views import (
     AdminAuditView,
@@ -64,6 +65,11 @@ urlpatterns = [
     path("api/owner/posts/<uuid:post_id>/", OwnerPostDetailView.as_view(), name="owner-post-detail"),
     path("api/me/avatar/", AvatarView.as_view(), name="me-avatar"),
     path("api/plans/", PublicPlansView.as_view(), name="public-plans"),
+    path("api/offers/", OffersFeedView.as_view(), name="offers-feed"),
+    path("api/me/activity/", MyActivityView.as_view(), name="me-activity"),
+    path("api/me/profile/", MyProfileView.as_view(), name="me-profile"),
+    path("api/admin/overview/", AdminOverviewView.as_view(), name="admin-overview"),
+    path("api/admin/users/", AdminUsersView.as_view(), name="admin-users"),
     path("api/support/tickets/", TicketsView.as_view(), name="support-tickets"),
     path("api/support/tickets/<uuid:ticket_id>/", TicketDetailView.as_view(), name="support-ticket"),
     path("api/support/tickets/<uuid:ticket_id>/reply/", TicketReplyView.as_view(), name="support-ticket-reply"),
