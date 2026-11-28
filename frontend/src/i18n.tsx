@@ -256,6 +256,8 @@ const messages = {
   "tk.descriptionPh": ["What happened, what you expected, and anything that helps us fix it.", "શું થયું, તમે શું ધાર્યું હતું, અને ઉકેલવામાં મદદરૂપ કંઈપણ.", "क्या हुआ, आपने क्या सोचा था, और ठीक करने में मददगार कुछ भी।"],
   "tk.submit": ["Submit ticket", "ટિકિટ મોકલો", "टिकट भेजें"],
   "tk.sending": ["Sending…", "મોકલાય છે…", "भेजा जा रहा है…"],
+  "cx.filters": ["Filters & categories", "ફિલ્ટર અને કેટેગરી", "फ़िल्टर और कैटेगरी"],
+  "cx.all": ["All in {name}", "{name} માં બધું", "{name} में सब"],
   "ob.planTitle": ["Choose a plan", "પ્લાન પસંદ કરો", "प्लान चुनें"],
   "ob.planHint": ["Start free and upgrade any time. Prices are monthly; 18% GST is added on top.", "મફતમાં શરૂ કરો અને ગમે ત્યારે અપગ્રેડ કરો. કિંમત માસિક છે; ઉપર 18% GST ઉમેરાય છે.", "मुफ़्त में शुरू करें और कभी भी अपग्रेड करें। कीमत मासिक है; ऊपर से 18% GST जुड़ता है।"],
   "ob.planPending": ["Your listing starts on Free. The paid plan begins once the MySobo team records your payment.", "તમારું લિસ્ટિંગ ફ્રીથી શરૂ થશે. MySobo ટીમ ચુકવણી નોંધે પછી પેઇડ પ્લાન શરૂ થશે.", "आपकी लिस्टिंग फ़्री से शुरू होगी। MySobo टीम भुगतान दर्ज करे, तब पेड प्लान शुरू होगा।"],

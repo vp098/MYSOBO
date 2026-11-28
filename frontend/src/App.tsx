@@ -1,6 +1,6 @@
 import { LeafMark, Logo, PinScene } from "./logo";
 import { IconBadge } from "./iconBadge";
-import { Heart, LockKeyhole } from "lucide-react";
+import { Heart, LockKeyhole, SearchX } from "lucide-react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -871,128 +871,182 @@ function CategoryPage({ kind, user, onAuthChange }: {
     if (nextPage <= 1) next.delete("page");
     else next.set("page", String(nextPage));
     setParams(next);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    results.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <section className="section categoryLanding">
-        <nav className="breadcrumbs" aria-label={t("cat.breadcrumb")}>
-          {breadcrumbs.map((item, index) => (
-            <span key={item.href}>
-              {index > 0 && <span aria-hidden="true"> / </span>}
-              {index === breadcrumbs.length - 1
-                ? <strong>{item.label}</strong>
-                : <Link to={item.href}>{item.label}</Link>}
-            </span>
-          ))}
-        </nav>
-        {categoriesLoading ? <p className="emptyState">{t("cat.loading")}</p> : categoryError ? (
-          <div className="emptyState"><p>{t("cat.loadError")}</p><button className="smallButton" type="button" onClick={() => void refetchCategories()}>{t("retry")}</button></div>
-        ) : !category || invalidSubcategory ? (
-          <div className="emptyState"><h1>{t("cat.notFound")}</h1><p>{t("cat.removed")}</p><Link className="button" to={`/mysobo?kind=${kind}`}>{t("cat.browseCategories")}</Link></div>
-        ) : (
-          <>
-            <header className="categoryPageHeader">
-              <div className="categoryPageArt">
-                {category.image || category.icon_image
-                  ? <img src={category.image || category.icon_image} alt="" />
-                  : <span>{category.icon || category.name.charAt(0).toUpperCase()}</span>}
-              </div>
-              <div>
-                <p className="eyebrow">{kind === "all" ? t("cat.eyAll") : kind === "service" ? t("cat.eyService") : t("cat.eyProduct")} · {t("hero.top")}</p>
-                <h1>{selectedSubcategory?.name ?? category.name}</h1>
-                {selectedSubcategory?.description || (!selectedSubcategory && category.description)
-                  ? <p>{selectedSubcategory?.description || category.description}</p>
-                  : null}
-                <strong>{t("cat.active", { n: listingCount })}</strong>
-              </div>
-            </header>
-            {directSubcategories.length > 0 && (
-              <section className="categorySubcategories">
-                <h2>{selectedSubcategory ? t("cat.moreIn", { name: selectedSubcategory.name }) : t("cat.browseName", { name: category.name })}</h2>
-                <div className="subcategoryCards">
-                  {directSubcategories.map((item) => (
-                    <button className="subcategoryCard" type="button" key={item.id} onClick={() =>
-                      navigate(`${categoryBase}/${category.slug}/${subcategoryPath(item).join("/")}${location.search}`)
-                    }>
-                      <strong>{item.name}</strong><span>{t("listings.count", { n: item.listing_count })}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-            <section className="categoryResults">
-              <form className="categoryFilters" key={searchKey} onSubmit={applyFilters}>
-                <h2>{t("cat.filterTitle")}</h2>
-                <label>{t("cat.search")}<input name="q" maxLength={120} defaultValue={params.get("q") ?? ""} placeholder={t("cat.searchPh", { name: selectedSubcategory?.name ?? category.name })} /></label>
-                <label>{t("cat.location")}<input name="location" defaultValue={params.get("location") ?? ""} placeholder={t("cat.locationPh")} /></label>
-                <label>{t("cat.sort")}<select name="ordering" defaultValue={params.get("ordering") ?? "relevance"}>
-                  <option value="relevance">{t("sort.relevance")}</option>
-                  <option value="rating">{t("sort.rating")}</option>
-                  <option value="recent">{t("sort.recent")}</option>
-                  <option value="alphabetical">{t("sort.alpha")}</option>
-                  {kind === "product" && <><option value="price_low">{t("sort.priceLow")}</option><option value="price_high">{t("sort.priceHigh")}</option></>}
-                  {kind === "service" && <><option value="price_low">{t("sort.priceLow")}</option><option value="price_high">{t("sort.priceHigh")}</option></>}
-                </select></label>
-                <label>{t("cat.minRating")}<select name="min_rating" defaultValue={params.get("min_rating") ?? ""}>
-                  <option value="">{t("cat.anyRating")}</option><option value="4">{t("cat.starsPlus", { n: 4 })}</option><option value="3">{t("cat.starsPlus", { n: 3 })}</option>
-                </select></label>
-                {kind === "product" && <>
-                  <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
-                  <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
-                </>}
-                {kind === "service" && <>
-                  <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
-                  <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
-                </>}
-                {filterFields.map((field: CategoryField) => (
-                  <label key={field.id}>{field.label}
-                    {field.field_type === "choice" ? (
-                      <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
-                        <option value="">{t("any")}</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}
-                      </select>
-                    ) : field.field_type === "boolean" ? (
-                      <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
-                        <option value="">{t("any")}</option><option value="true">{t("yes")}</option><option value="false">{t("no")}</option>
-                      </select>
-                    ) : (
-                      <input name={`field_${field.key}`} type={field.field_type === "number" ? "number" : "text"} defaultValue={params.get(`field_${field.key}`) ?? ""} />
-                    )}
-                  </label>
-                ))}
-                <div className="filterActions"><button className="button" type="submit">{t("cat.apply")}</button><button className="smallButton" type="button" onClick={() => setParams(new URLSearchParams())}>{t("cat.clearAll")}</button></div>
-              </form>
-              <div className="categoryListingArea">
-                <div className="sectionTitle">
-                  <div><p className="eyebrow">{kind === "all" ? t("cat.matchingAll") : kind === "service" ? t("cat.matchingService") : t("cat.matchingProduct")}</p><h2>{selectedSubcategory?.name ?? category.name}</h2></div>
-                  <span className="mutedText">{t("cat.results", { n: listings?.count ?? 0 })}</span>
-                </div>
-                {listingsLoading ? <p className="emptyState">{t("cat.finding")}</p> : listingsError ? (
-                  <div className="emptyState"><p>{t("cat.listingsError")}</p><button className="smallButton" type="button" onClick={() => void refetchListings()}>{t("retry")}</button></div>
-                ) : (listings?.results.length || listings?.products?.length || listings?.services?.length) ? (
-                  <>
-                    {kind === "all"
-                      ? <BusinessCards businesses={listings?.results ?? []} />
-                      : <CatalogCards products={listings?.products} services={listings?.services} />}
-                    <nav className="pagination" aria-label={t("cat.pages")}>
-                      <button className="smallButton" type="button" disabled={!listings.previous} onClick={() => changePage(page - 1)}>{t("cat.prev")}</button>
-                      <span>{t("cat.pageOf", { page, total: totalPages })}</span>
-                      <button className="smallButton" type="button" disabled={!listings.next} onClick={() => changePage(page + 1)}>{t("cat.next")}</button>
-                    </nav>
-                  </>
-                ) : (
-                  <div className="emptyState">
-                    <h2>{t("cat.emptyTitle")}</h2>
-                    <p>{selectedSubcategory ? t("cat.emptySub", { name: selectedSubcategory.name }) : t("cat.checkBack")}</p>
-                    {selectedSubcategory && <Link className="smallButton" to={`${categoryBase}/${category.slug}`}>{t("cat.returnTo", { name: category.name })}</Link>}
-                  </div>
-                )}
-              </div>
-            </section>
-          </>
+  const results = useRef<HTMLDivElement>(null);
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => { setDrawer(false); results.current?.scrollTo({ top: 0 }); }, [location.pathname, searchKey]);
+  const parent = selectedChain.length > 1 ? selectedChain[selectedChain.length - 2] : null;
+  const upHref = selectedSubcategory
+    ? (parent ? `${categoryBase}/${categorySlug}/${subcategoryPath(parent).join("/")}` : `${categoryBase}/${categorySlug}`)
+    : `/mysobo?kind=${kind === "all" ? "service" : kind}`;
+  const quickSort = (value: string) => {
+    const next = new URLSearchParams(params);
+    next.delete("page");
+    if (value && value !== "relevance") next.set("ordering", value); else next.delete("ordering");
+    setParams(next);
+  };
+  const hasResults = Boolean(listings?.results.length || listings?.products?.length || listings?.services?.length);
+
+  const sidebar = category && !invalidSubcategory ? (
+    <>
+      <div className="cxCat">
+        <span className="cxCatArt">
+          {category.image || category.icon_image
+            ? <img src={category.image || category.icon_image} alt="" />
+            : <span>{category.icon || category.name.charAt(0).toUpperCase()}</span>}
+        </span>
+        <div>
+          <p className="cxCatKind">{kind === "all" ? t("cat.eyAll") : kind === "service" ? t("cat.eyService") : t("cat.eyProduct")}</p>
+          <b>{category.name}</b>
+          <small>{t("cat.active", { n: category.listing_count })}</small>
+        </div>
+      </div>
+
+      <nav className="cxNav" aria-label={t("cat.browseName", { name: selectedSubcategory?.name ?? category.name })}>
+        <p className="cxLabel">{selectedSubcategory ? t("cat.moreIn", { name: selectedSubcategory.name }) : t("cat.browseName", { name: category.name })}</p>
+        {selectedSubcategory && (
+          <Link className="cxBack" to={`${upHref}${location.search}`}>← {parent?.name ?? category.name}</Link>
         )}
-      </section>
+        <Link to={`${selectedSubcategory ? `${categoryBase}/${categorySlug}/${subcategoryPath(selectedSubcategory).join("/")}` : `${categoryBase}/${categorySlug}`}${location.search}`}
+          className="active" aria-current="page">
+          <span>{t("cx.all", { name: selectedSubcategory?.name ?? category.name })}</span><em>{listingCount}</em>
+        </Link>
+        {directSubcategories.map((item) => (
+          <Link key={item.id} to={`${categoryBase}/${category.slug}/${subcategoryPath(item).join("/")}${location.search}`}>
+            <span>{item.name}</span><em>{item.listing_count}</em>
+          </Link>
+        ))}
+      </nav>
+
+      <form className="cxFilters" key={searchKey} onSubmit={applyFilters}>
+        <p className="cxLabel">{t("cat.filterTitle")}</p>
+        <label>{t("cat.search")}<input name="q" maxLength={120} defaultValue={params.get("q") ?? ""} placeholder={t("cat.searchPh", { name: selectedSubcategory?.name ?? category.name })} /></label>
+        <label>{t("cat.location")}<input name="location" defaultValue={params.get("location") ?? ""} placeholder={t("cat.locationPh")} /></label>
+        <label>{t("cat.minRating")}<select name="min_rating" defaultValue={params.get("min_rating") ?? ""}>
+          <option value="">{t("cat.anyRating")}</option><option value="4">{t("cat.starsPlus", { n: 4 })}</option><option value="3">{t("cat.starsPlus", { n: 3 })}</option>
+        </select></label>
+        {kind !== "all" && (
+          <div className="cxPair">
+            <label>{t("cat.minPrice")}<input name="min_price" type="number" min="0" step="0.01" defaultValue={params.get("min_price") ?? ""} /></label>
+            <label>{t("cat.maxPrice")}<input name="max_price" type="number" min="0" step="0.01" defaultValue={params.get("max_price") ?? ""} /></label>
+          </div>
+        )}
+        {filterFields.map((field: CategoryField) => (
+          <label key={field.id}>{field.label}
+            {field.field_type === "choice" ? (
+              <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
+                <option value="">{t("any")}</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}
+              </select>
+            ) : field.field_type === "boolean" ? (
+              <select name={`field_${field.key}`} defaultValue={params.get(`field_${field.key}`) ?? ""}>
+                <option value="">{t("any")}</option><option value="true">{t("yes")}</option><option value="false">{t("no")}</option>
+              </select>
+            ) : (
+              <input name={`field_${field.key}`} type={field.field_type === "number" ? "number" : "text"} defaultValue={params.get(`field_${field.key}`) ?? ""} />
+            )}
+          </label>
+        ))}
+        <input type="hidden" name="ordering" value={params.get("ordering") ?? ""} />
+        <div className="cxFilterActions">
+          <button className="odBtn" type="submit">{t("cat.apply")}</button>
+          <button className="odBtn outline" type="button" onClick={() => setParams(new URLSearchParams())}>{t("cat.clearAll")}</button>
+        </div>
+      </form>
+    </>
+  ) : null;
+
+  return (
+    <Shell user={user} onAuthChange={onAuthChange} dashboard>
+      <div className={`cxLayout ${drawer ? "drawerOpen" : ""}`}>
+        {sidebar && (
+          <aside id="cx-side" className={`cxSide ${drawer ? "open" : ""}`} aria-label={t("cx.filters")}>
+            <div className="cxSideTop">
+              <b>{t("cx.filters")}</b>
+              <button type="button" className="spIcon cxClose" onClick={() => setDrawer(false)} aria-label={t("close")}>×</button>
+            </div>
+            {sidebar}
+          </aside>
+        )}
+        {drawer && <button type="button" className="cxScrim" aria-label={t("close")} onClick={() => setDrawer(false)} />}
+        <section className="cxMain">
+          <header className="cxHead">
+            <nav className="cxCrumbs" aria-label={t("cat.breadcrumb")}>
+              {breadcrumbs.map((item, index) => (
+                <span key={item.href}>
+                  {index > 0 && <span aria-hidden="true">›</span>}
+                  {index === breadcrumbs.length - 1 ? <strong>{item.label}</strong> : <Link to={item.href}>{item.label}</Link>}
+                </span>
+              ))}
+            </nav>
+            {category && !invalidSubcategory && (
+              <div className="cxTitleRow">
+                <div className="cxTitle">
+                  <h1>{selectedSubcategory?.name ?? category.name}</h1>
+                  <p>{listingsLoading ? t("cat.finding") : t("cat.results", { n: listings?.count ?? 0 })}
+                    {(selectedSubcategory?.description || (!selectedSubcategory && category.description)) ? ` · ${selectedSubcategory?.description || category.description}` : ""}</p>
+                </div>
+                <div className="cxTools">
+                  <button type="button" className="odBtn outline cxFilterBtn" aria-expanded={drawer} aria-controls="cx-side" onClick={() => setDrawer(true)}>{t("cx.filters")}</button>
+                  <label className="cxSort"><span>{t("cat.sort")}</span>
+                    <select value={params.get("ordering") ?? "relevance"} onChange={(event) => quickSort(event.target.value)}>
+                      <option value="relevance">{t("sort.relevance")}</option>
+                      <option value="rating">{t("sort.rating")}</option>
+                      <option value="recent">{t("sort.recent")}</option>
+                      <option value="alphabetical">{t("sort.alpha")}</option>
+                      {kind !== "all" && <><option value="price_low">{t("sort.priceLow")}</option><option value="price_high">{t("sort.priceHigh")}</option></>}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            )}
+            {directSubcategories.length > 0 && (
+              <div className="cxChips" role="list">
+                {directSubcategories.map((item) => (
+                  <Link role="listitem" key={item.id} className="cxChip" to={`${categoryBase}/${category!.slug}/${subcategoryPath(item).join("/")}${location.search}`}>
+                    {item.name}<em>{item.listing_count}</em>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </header>
+
+          <div className="cxBody" ref={results}>
+            {categoriesLoading ? <p className="emptyState">{t("cat.loading")}</p> : categoryError ? (
+              <div className="emptyState"><p>{t("cat.loadError")}</p><button className="smallButton" type="button" onClick={() => void refetchCategories()}>{t("retry")}</button></div>
+            ) : !category || invalidSubcategory ? (
+              <div className="emptyState"><h1>{t("cat.notFound")}</h1><p>{t("cat.removed")}</p><Link className="button" to={`/mysobo?kind=${kind}`}>{t("cat.browseCategories")}</Link></div>
+            ) : listingsLoading ? <div className="cxSkeletons">{Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton cxSkeleton" />)}</div>
+              : listingsError ? (
+                <div className="emptyState"><p>{t("cat.listingsError")}</p><button className="smallButton" type="button" onClick={() => void refetchListings()}>{t("retry")}</button></div>
+              ) : hasResults ? (
+                <>
+                  {kind === "all"
+                    ? <BusinessCards businesses={listings?.results ?? []} />
+                    : <CatalogCards products={listings?.products} services={listings?.services} />}
+                  {totalPages > 1 && (
+                    <nav className="pagination" aria-label={t("cat.pages")}>
+                      <button className="smallButton" type="button" disabled={!listings?.previous} onClick={() => changePage(page - 1)}>{t("cat.prev")}</button>
+                      <span>{t("cat.pageOf", { page, total: totalPages })}</span>
+                      <button className="smallButton" type="button" disabled={!listings?.next} onClick={() => changePage(page + 1)}>{t("cat.next")}</button>
+                    </nav>
+                  )}
+                </>
+              ) : (
+                <div className="cxEmpty">
+                  <IconBadge icon={SearchX} />
+                  <h2>{t("cat.emptyTitle")}</h2>
+                  <p>{selectedSubcategory ? t("cat.emptySub", { name: selectedSubcategory.name }) : t("cat.checkBack")}</p>
+                  <div className="cxEmptyActions">
+                    {selectedSubcategory && <Link className="odBtn outline" to={`${categoryBase}/${category.slug}`}>{t("cat.returnTo", { name: category.name })}</Link>}
+                    {searchKey && <button className="odBtn outline" type="button" onClick={() => setParams(new URLSearchParams())}>{t("cat.clearAll")}</button>}
+                  </div>
+                </div>
+              )}
+          </div>
+        </section>
+      </div>
     </Shell>
   );
 }
