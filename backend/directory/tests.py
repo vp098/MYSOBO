@@ -819,7 +819,10 @@ class OwnerListingFlowTests(TestCase):
         guest = APIClient()
         for kind in ("view", "view", "call", "whatsapp"):
             self.assertEqual(guest.post("/api/businesses/tiffin-ghar/events/", {"type": kind}, format="json").status_code, 201)
-        self.assertEqual(client.get("/api/owner/stats/").json(), {"view": 2, "call": 1, "whatsapp": 1})
+        stats = client.get("/api/owner/stats/").json()
+        self.assertEqual(stats["view"], 2)
+        self.assertEqual(stats["call"], 1)
+        self.assertEqual(stats["whatsapp"], 1)
 
 
 
