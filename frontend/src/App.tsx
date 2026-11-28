@@ -32,7 +32,8 @@ import { ListingPage } from "./listing";
 import { Onboarding, shouldOnboard } from "./onboarding";
 import { NeighbourhoodHub, fadeUp, stagger } from "./hub";
 import { motion, useReducedMotion } from "framer-motion";
-import { DEMO_LOGIN_ENABLED, EmailSignIn, GoogleSignIn, SMS_OTP_ENABLED } from "./google";
+import { SMS_OTP_ENABLED } from "./google";
+import { AuthScreen } from "./auth";
 
 export function Shell({
   children,
@@ -112,7 +113,7 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
   const { t } = useT();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<"otp" | "password">("otp");
+  const [mode, setMode] = useState<"email" | "otp">("email");
   const [mobile, setMobile] = useState("");
   const [consent, setConsent] = useState(false);
   const [code, setCode] = useState("");
@@ -162,35 +163,14 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
     }
   }
 
-  async function passwordLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setPending(true);
-    setError("");
-    try {
-      const response = await apiPost<{ token: string }>("/auth/login/", {
-        username: form.get("username"),
-        password: form.get("password"),
-      });
-      sessionStorage.setItem("mysobo-token", response.token);
-      onSuccess();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("err.login"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  if (DEMO_LOGIN_ENABLED && mode === "otp") {
+  if (mode === "email" || !SMS_OTP_ENABLED) {
     return (
-      <div className="modalBackdrop" onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}>
-        <section className="authCard modalCard authScreen" role="dialog" aria-modal="true" aria-labelledby="login-title">
-          <button className="modalClose" type="button" onClick={onClose} aria-label={t("close")}>×</button>
-          <EmailSignIn startWith={startWith} onSuccess={onSuccess} onPassword={() => setMode("password")} />
-        </section>
-      </div>
+      <AuthScreen
+        startWith={startWith}
+        onSuccess={onSuccess}
+        onClose={onClose}
+        onMobile={SMS_OTP_ENABLED ? () => setMode("otp") : undefined}
+      />
     );
   }
 
@@ -203,13 +183,8 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
         <span className="authLogo"><LeafMark size={60} /></span>
         <p className="eyebrow">{t("login.eyebrow")}</p>
         <h1 id="login-title">{t("login.title")}</h1>
-        <p className="mutedText">{DEMO_LOGIN_ENABLED ? t("login.introEmail") : SMS_OTP_ENABLED ? t("login.intro") : t("login.introGoogle")}</p>
-        {mode === "otp" && DEMO_LOGIN_ENABLED ? (
-          <EmailSignIn startWith={startWith} onSuccess={onSuccess} onPassword={() => setMode("password")} />
-        ) : mode === "otp" && !SMS_OTP_ENABLED ? (
-          <GoogleSignIn onSuccess={onSuccess} />
-        ) : mode === "otp" ? (
-          codeRequested ? (
+        <p className="mutedText">{t("login.intro")}</p>
+        {codeRequested ? (
             <form onSubmit={verifyOtp}>
               <p className="mutedText">{t("login.enterCode", { mobile })}</p>
               <label>{t("login.code")}
@@ -250,20 +225,12 @@ function LoginDialog({ onClose, onSuccess, startWith = "login" }: { onClose: () 
               {error && <p className="formError">{error}</p>}
               <button className="button authButton" type="submit" disabled={pending || !mobile.trim() || !consent}>{pending ? t("login.sending") : t("login.send")}</button>
             </form>
-          )
-        ) : (
-          <form onSubmit={passwordLogin}>
-            <label>{t("login.username")}<input name="username" autoComplete="username" required /></label>
-            <label>{t("login.password")}<input name="password" type="password" autoComplete="current-password" required /></label>
-            {error && <p className="formError">{error}</p>}
-            <button className="button authButton" type="submit" disabled={pending}>{pending ? t("login.signingIn") : t("login.withPassword")}</button>
-          </form>
-        )}
+          )}
         <button type="button" className="textButton loginModeToggle" onClick={() => {
-          setMode((current) => current === "otp" ? "password" : "otp");
+          setMode("email");
           setError("");
           setNotice("");
-        }}>{mode === "otp" ? t("login.usePassword") : DEMO_LOGIN_ENABLED ? t("login.useEmail") : SMS_OTP_ENABLED ? t("login.useOtp") : t("login.useGoogle")}</button>
+        }}>{t("login.useEmail")}</button>
       </section>
     </div>
   );

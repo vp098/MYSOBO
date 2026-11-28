@@ -293,3 +293,93 @@ class DemoEmailLoginView(APIView):
         Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
+
+
+# --------------------------------------------------
+# EMAIL + PASSWORD ACCOUNTS
+# --------------------------------------------------
+
+class EmailAuthThrottle(ScopedRateThrottle):
+    scope = "email_auth"
+
+
+_DUMMY_HASH = make_password("mysobo-timing-guard")
+
+
+def _is_admin(user):
+    return user.is_staff or user.is_superuser or user.admin_roles.exists()
+
+
+def _token_for(user):
+    set_authenticated_user_rls_context(user.pk)
+    Profile.objects.get_or_create(id=user, defaults={"name": user.get_full_name()})
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({"token": token.key})
+
+
+class EmailRegisterView(APIView):
+    """Create an account with email and password. Body: {name, email, password}."""
+
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = (EmailAuthThrottle,)
+
+    @transaction.atomic
+    def post(self, request):
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        name = " ".join(str(request.data.get("name", "")).split())[:150]
+        email = str(request.data.get("email", "")).strip().lower()
+        password = str(request.data.get("password", ""))
+        try:
+            serializers.EmailField().run_validation(email)
+        except serializers.ValidationError:
+            return Response({"detail": "Enter a valid email address.", "field": "email"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(name) < 2:
+            return Response({"detail": "Enter your name.", "field": "name"}, status=status.HTTP_400_BAD_REQUEST)
+
+        first, _, last = name.partition(" ")
+        existing = User.objects.select_for_update().filter(email__iexact=email).order_by("date_joined").first()
+        if existing and (existing.has_usable_password() or _is_admin(existing) or not settings.DEMO_EMAIL_LOGIN):
+            return Response(
+                {"detail": "An account with this email already exists. Log in instead.", "field": "email", "code": "exists"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        user = existing or User(username=f"u-{uuid.uuid4().hex[:12]}", email=email)
+        user.first_name, user.last_name = first[:150], last[:150]
+        try:
+            validate_password(password, user)
+        except DjangoValidationError as error:
+            return Response({"detail": " ".join(error.messages), "field": "password"}, status=status.HTTP_400_BAD_REQUEST)
+        # In preview mode an account first made with the passwordless preview
+        # login can be given a password here. In production that is refused above.
+        user.set_password(password)
+        user.save()
+        Profile.objects.update_or_create(id=user, defaults={"name": name})
+        response = _token_for(user)
+        response.status_code = status.HTTP_201_CREATED
+        return response
+
+
+class EmailLoginView(APIView):
+    """Log in with email (or username, for staff) and password."""
+
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = (EmailAuthThrottle,)
+
+    def post(self, request):
+        identifier = str(request.data.get("email", "")).strip()
+        password = str(request.data.get("password", ""))
+        if not identifier or not password:
+            return Response({"detail": "Enter your email and password."}, status=status.HTTP_400_BAD_REQUEST)
+        candidates = list(User.objects.filter(email__iexact=identifier).order_by("date_joined")[:5])
+        if not candidates:
+            candidates = list(User.objects.filter(username=identifier)[:1])
+        user = next((item for item in candidates if item.is_active and item.check_password(password)), None)
+        if user is None:
+            if not candidates:
+                check_password(password, _DUMMY_HASH)  # keep timing similar
+            return Response({"detail": "Email or password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        return _token_for(user)

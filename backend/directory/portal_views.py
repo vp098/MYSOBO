@@ -785,12 +785,29 @@ class OwnerStatsView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
-        since = timezone.now() - timedelta(days=30)
-        counts = dict(Event.objects.filter(
-            business__members__user=request.user, created_at__gte=since,
-            type__in=("view", "call", "whatsapp"),
-        ).values_list("type").annotate(total=Count("id")).values_list("type", "total"))
-        return Response({key: counts.get(key, 0) for key in ("view", "call", "whatsapp")})
+        from django.db.models.functions import TruncDate
+
+        kinds = ("view", "call", "whatsapp")
+        now = timezone.now()
+        mine = Event.objects.filter(
+            business__in=Business.objects.filter(members__user=request.user).values("id"),
+            type__in=kinds,
+        )
+        counts = dict(mine.filter(created_at__gte=now - timedelta(days=30)).values_list("type").annotate(total=Count("id")).values_list("type", "total"))
+        body = {key: counts.get(key, 0) for key in kinds}
+
+        # Daily series for the last 14 days, plus the 14 days before for trend arrows.
+        today = timezone.localdate()
+        start = today - timedelta(days=13)
+        rows = mine.filter(created_at__date__gte=start).annotate(day=TruncDate("created_at")).values("day", "type").annotate(n=Count("id"))
+        by_day = {(row["day"], row["type"]): row["n"] for row in rows}
+        days = [start + timedelta(days=offset) for offset in range(14)]
+        body["daily"] = [{"day": day.isoformat(), **{key: by_day.get((day, key), 0) for key in kinds}} for day in days]
+        previous = dict(mine.filter(created_at__date__gte=start - timedelta(days=14), created_at__date__lt=start)
+                        .values_list("type").annotate(total=Count("id")).values_list("type", "total"))
+        body["last14"] = {key: sum(item[key] for item in body["daily"]) for key in kinds}
+        body["prev14"] = {key: previous.get(key, 0) for key in kinds}
+        return Response(body)
 
 
 

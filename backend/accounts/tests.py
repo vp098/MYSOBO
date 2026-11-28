@@ -222,3 +222,71 @@ class DemoEmailLoginTests(TestCase):
         self.assertEqual(self.post("boss@mysobo.in").status_code, 403)
         self.assertEqual(self.post("ops@mysobo.in").status_code, 403)
         self.assertFalse(Token.objects.filter(user__in=[staff, admin]).exists())
+
+
+class EmailPasswordAuthTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # throttle counters
+        self.client = APIClient()
+
+    def register(self, **body):
+        data = {"name": "Hetal Shah", "email": "hetal@example.com", "password": "Neem-leaf-2026"}
+        data.update(body)
+        return self.client.post("/api/auth/email/register/", data, format="json")
+
+    def test_signup_then_login_with_any_valid_email(self):
+        response = self.register()
+        self.assertEqual(response.status_code, 201, response.content)
+        token = response.json()["token"]
+        me = APIClient(HTTP_AUTHORIZATION=f"Token {token}").get("/api/auth/me/")
+        self.assertEqual(me.status_code, 200)
+        user = User.objects.get(email="hetal@example.com")
+        self.assertEqual(user.first_name, "Hetal")
+        self.assertTrue(user.check_password("Neem-leaf-2026"))
+        login = self.client.post("/api/auth/email/login/", {"email": "HETAL@example.com", "password": "Neem-leaf-2026"}, format="json")
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.json()["token"], token)
+
+    def test_clear_errors(self):
+        self.assertEqual(self.register(email="not-an-email").json()["field"], "email")
+        self.assertEqual(self.register(name="").json()["field"], "name")
+        weak = self.register(password="12345678")
+        self.assertEqual(weak.status_code, 400)
+        self.assertEqual(weak.json()["field"], "password")
+        self.assertEqual(self.register(password="short").json()["field"], "password")
+        self.register()
+        again = self.register()
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.json()["code"], "exists")
+        wrong = self.client.post("/api/auth/email/login/", {"email": "hetal@example.com", "password": "nope-nope-1"}, format="json")
+        self.assertEqual(wrong.status_code, 400)
+        self.assertEqual(wrong.json()["detail"], "Email or password is incorrect.")
+        missing = self.client.post("/api/auth/email/login/", {"email": "nobody@example.com", "password": "whatever-123"}, format="json")
+        self.assertEqual(missing.json()["detail"], "Email or password is incorrect.")
+
+    def test_staff_can_log_in_with_username(self):
+        User.objects.create_user(username="ops", password="Ops-pass-2026", is_staff=True)
+        response = self.client.post("/api/auth/email/login/", {"email": "ops", "password": "Ops-pass-2026"}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+    def test_cannot_take_over_admin_or_password_accounts(self):
+        admin = User.objects.create_user(username="boss", email="boss@example.com")
+        admin.set_unusable_password()
+        admin.is_staff = True
+        admin.save()
+        with self.settings(DEMO_EMAIL_LOGIN=True):
+            self.assertEqual(self.register(email="boss@example.com").status_code, 409)
+        admin.refresh_from_db()
+        self.assertFalse(admin.has_usable_password())
+
+    def test_preview_accounts_can_set_a_password_only_in_preview_mode(self):
+        user = User.objects.create_user(username="demo-x", email="demo@example.com")
+        user.set_unusable_password()
+        user.save()
+        with self.settings(DEMO_EMAIL_LOGIN=False):
+            self.assertEqual(self.register(email="demo@example.com").status_code, 409)
+        with self.settings(DEMO_EMAIL_LOGIN=True):
+            self.assertEqual(self.register(email="demo@example.com").status_code, 201)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("Neem-leaf-2026"))
