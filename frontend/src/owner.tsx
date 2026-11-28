@@ -1,7 +1,7 @@
 import { useScrollMainToTop } from "./dashboard";
 import { MyTickets, TicketForm } from "./support";
 import { ThemePicker } from "./theme";
-import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard, OwnerInvoices } from "./ownerFlows";
+import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard, OwnerCatalog, OwnerInvoices } from "./ownerFlows";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
 import { PhotoLibrary } from "./photos";
@@ -37,6 +37,7 @@ const GROUPS: { label?: MessageKey; items: Section[] }[] = [
   { label: "od.group.listings", items: [
     { path: "businesses", key: "od.nav.businesses", icon: "store" },
     { path: "approvals", key: "ap.nav", icon: "send" },
+    { path: "catalog", key: "oc.nav", icon: "tag" },
     { path: "add", key: "od.nav.add", icon: "plus" },
     { path: "photos", key: "ph.nav", icon: "image" },
     { path: "verify", key: "vf.nav", icon: "shield" },
@@ -198,12 +199,12 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
       <Link to={to("offers")} className={active.path === "offers" ? "active" : ""} aria-current={active.path === "offers" ? "page" : undefined} onClick={clear}>
         <Icon name="tag" size={22} /><span>{t("od.tab.offers")}</span>
       </Link>
-      <button type="button" className={["approvals", "photos", "plans", "invoices", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
+      <button type="button" className={["approvals", "catalog", "photos", "plans", "invoices", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
         <Icon name="more" size={22} /><span>{t("od.tab.more")}</span>
       </button>
       {moreOpen && (
         <div className="odSheet" role="menu">
-          {(["approvals", "photos", "plans", "invoices", "profile", "help"] as const).map((path) => {
+          {(["approvals", "catalog", "photos", "plans", "invoices", "profile", "help"] as const).map((path) => {
             const item = SECTIONS.find((entry) => entry.path === path)!;
             return <Link role="menuitem" key={path} to={to(path)} onClick={clear}><Icon name={item.icon} />{t(item.key)}</Link>;
           })}
@@ -264,6 +265,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           {active.path === "businesses" && <MyBusinesses {...data} />}
           {active.path === "add" && <OnboardingWizard {...data} />}
           {active.path === "approvals" && <ApprovalRequests {...data} />}
+          {active.path === "catalog" && <OwnerCatalog {...data} />}
           {active.path === "invoices" && <><PageHead title={t("r3.invoices")} copy={t("inv.copy")} /><OwnerInvoices /></>}
           {active.path === "photos" && <PhotoLibrary owned={owned} />}
           {active.path === "verify" && <VerifyListing />}

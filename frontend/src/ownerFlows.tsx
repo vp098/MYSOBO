@@ -483,3 +483,116 @@ export function OwnerInvoices() {
     </section>
   );
 }
+
+
+type CatalogItem = {
+  id: string; type: "service" | "product"; name: string; description: string; business_id: string;
+  category: string; category_id: string | null; active: boolean; available: boolean;
+  price?: string | null; price_min?: string | null; price_max?: string | null;
+};
+
+/** Services & products of one listing: add, edit price, switch on/off, delete. */
+export function OwnerCatalog({ owned, perform }: DashData) {
+  const { t } = useT();
+  const [selected, setSelected] = useState("");
+  const business = owned.find((item) => item.id === selected) ?? owned[0];
+  const [formKey, setFormKey] = useState(0);
+  const { data: items = [], isLoading } = useQuery({
+    queryKey: ["owner-catalog", business?.id],
+    queryFn: () => apiGet<CatalogItem[]>(`/owner/catalog/?business_id=${business!.id}`),
+    enabled: Boolean(business),
+  });
+  const { data: categories = [] } = useQuery({ queryKey: ["categories", "all"], queryFn: () => apiGet<{ id: string; name: string; supports_services: boolean; supports_products: boolean }[]>("/categories/?kind=all") });
+  const kinds: ("service" | "product")[] = business?.kind === "product" ? ["product"] : business?.kind === "service" ? ["service"] : ["service", "product"];
+  const [kind, setKind] = useState<"service" | "product">("service");
+  const addKind = kinds.includes(kind) ? kind : kinds[0];
+
+  if (!business) return <><PageHead title={t("oc.title")} copy={t("oc.copy")} /><p className="mutedText">{t("od.addToPost")}</p></>;
+
+  async function add(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const price = String(form.get("price") ?? "").trim();
+    const body: Record<string, unknown> = {
+      business_id: business!.id, category_id: form.get("category_id"),
+      name: form.get("name"), description: form.get("description") ?? "",
+    };
+    if (addKind === "service") body.price_min = price || null; else body.price = price || null;
+    const ok = await perform(() => apiPost(addKind === "service" ? "/services/" : "/products/", body), t("oc.added"));
+    if (ok !== null) setFormKey((key) => key + 1);
+  }
+
+  const change = (item: CatalogItem, data: Record<string, unknown>, success: string) =>
+    perform(() => apiPatch(`/owner/catalog/${item.type}/${item.id}/`, data), success);
+
+  return (
+    <>
+      <PageHead title={t("oc.title")} copy={t("oc.copy")}>
+        {owned.length > 1 && (
+          <label className="odInlineLabel">{t("od.selectListing")}
+            <select className="odSelect" value={business.id} onChange={(event) => setSelected(event.target.value)}>
+              {owned.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+        )}
+      </PageHead>
+      <div className="odSplit wideLeft">
+        <section className="odCard">
+          <div className="odCardHead"><h2>{t("oc.list", { n: items.length })}</h2></div>
+          {isLoading ? <p className="mutedText">{t("home.finding")}</p> : items.length ? (
+            <div className="odTableWrap">
+              <table className="odTable">
+                <thead><tr><th>{t("oc.name")}</th><th>{t("oc.price")}</th><th>{t("od.status")}</th><th aria-label={t("oc.actions")} /></tr></thead>
+                <tbody>
+                  {items.map((item) => {
+                    const price = item.type === "service" ? item.price_min : item.price;
+                    return (
+                      <tr key={`${item.type}-${item.id}`}>
+                        <td><b>{item.name}</b><small>{t(item.type === "service" ? "kind.service" : "kind.product")} · {item.category}</small></td>
+                        <td>
+                          <input className="ocPrice" type="number" min="0" step="1" defaultValue={price ?? ""} aria-label={t("oc.price")}
+                            onBlur={(event) => {
+                              const value = event.target.value.trim();
+                              if (value === String(price ?? "").replace(/\.00$/, "")) return;
+                              void change(item, item.type === "service" ? { price_min: value || null } : { price: value || null }, t("oc.saved"));
+                            }} />
+                        </td>
+                        <td>
+                          <label className="checkLabel"><input type="checkbox" checked={item.active} onChange={(event) => void change(item, { active: event.target.checked }, event.target.checked ? t("oc.shown") : t("oc.hidden"))} />{t("oc.visible")}</label>
+                          <label className="checkLabel"><input type="checkbox" checked={item.available} onChange={(event) => void change(item, { available: event.target.checked }, t("oc.saved"))} />{t("oc.available")}</label>
+                        </td>
+                        <td><button type="button" className="odBtn small outline danger" onClick={() => {
+                          if (window.confirm(t("oc.confirmDelete", { name: item.name }))) void perform(() => apiDelete(`/owner/catalog/${item.type}/${item.id}/`), t("oc.deleted"));
+                        }}>{t("of.delete")}</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="mutedText">{t("oc.empty")}</p>}
+        </section>
+        <section className="odCard">
+          <h2>{t("oc.add")}</h2>
+          <form key={`${formKey}-${categories.length}-${business.id}`} className="stackForm" onSubmit={add}>
+            {kinds.length > 1 && (
+              <div className="ofTabs" role="tablist">
+                {kinds.map((value) => <button key={value} type="button" role="tab" aria-selected={addKind === value} className={addKind === value ? "on" : ""} onClick={() => setKind(value)}>{t(value === "service" ? "kind.service" : "kind.product")}</button>)}
+              </div>
+            )}
+            <label>{t("oc.name")} *<input name="name" required minLength={2} maxLength={200} /></label>
+            <label>{t("cat.category")} *
+              <select name="category_id" required defaultValue={business.category?.id ?? ""}>
+                <option value="" disabled>{t("tk.choose")}</option>
+                {categories.filter((item) => (addKind === "service" ? item.supports_services : item.supports_products)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+            <label>{addKind === "service" ? t("oc.priceFrom") : t("oc.price")}<input name="price" type="number" min="0" step="1" /></label>
+            <label>{t("form.description")}<textarea name="description" rows={3} maxLength={4000} /></label>
+            <button className="odBtn" type="submit">{t("oc.add")}</button>
+          </form>
+        </section>
+      </div>
+    </>
+  );
+}

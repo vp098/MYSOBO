@@ -1,4 +1,5 @@
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { loginPath } from "./auth";
 import { IconBadge } from "./iconBadge";
 import { Lightbox } from "./photos";
 import { SearchX } from "lucide-react";
@@ -54,6 +55,7 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(0);
   const [viewer, setViewer] = useState<number | null>(null);
@@ -98,9 +100,8 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
   });
 
   function askLogin() {
-    const next = new URLSearchParams(params);
-    next.set("dialog", "login");
-    setParams(next);
+    // Protected boundary: phone number, full description, reviews. Come back here after signing in.
+    navigate(loginPath(`${location.pathname}${location.search}`));
   }
 
   function contact(type: "call" | "whatsapp", href: string) {
@@ -158,186 +159,227 @@ export function ListingPage({ user, onAuthChange }: { user?: PortalUser; onAuthC
   const gallery = business?.photos ?? [];
   const kindLabel = business ? t(business.kind === "product" ? "kind.product" : business.kind === "both" ? "kind.both" : "kind.service") : "";
 
-  return (
-    <Shell user={user} onAuthChange={onAuthChange}>
-      <article className="lp">
-        <div className="lpBar">
-          <button type="button" className="lpIconBtn" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/mysobo"))} aria-label={t("lp.back")}><BackIcon /></button>
-          <div className="lpBarRight">
-            <button type="button" className="lpIconBtn" onClick={() => void share()} aria-label={t("lp.share")}><ShareIcon /></button>
-            <button type="button" className={`lpIconBtn ${saved?.saved ? "saved" : ""}`} onClick={() => void toggleSaved()} aria-pressed={Boolean(saved?.saved)} aria-label={saved?.saved ? t("listing.saved") : t("listing.save")}><HeartIcon on={Boolean(saved?.saved)} /></button>
-          </div>
-        </div>
+  const tabs = [
+    { key: "overview", label: t("lv.overview"), show: true },
+    { key: "catalog", label: business?.kind === "product" ? t("lp.products") : business?.kind === "both" ? t("lp.servicesProducts") : t("lp.services"), show: catalog.length > 0, count: catalog.length },
+    { key: "offers", label: t("r3.offersOnListing"), show: offers.length > 0, count: offers.length },
+    { key: "photos", label: t("lp.photos"), show: gallery.length > 0, count: gallery.length },
+    { key: "hours", label: t("lp.hours"), show: hours.length > 0 },
+    { key: "reviews", label: t("listing.reviews"), show: true, count: reviews.length },
+  ].filter((tab) => tab.show);
+  const activeTab = tabs.some((tab) => tab.key === params.get("tab")) ? params.get("tab")! : "overview";
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [activeTab]);
+  function openTab(key: string) {
+    const next = new URLSearchParams(params);
+    if (key === "overview") next.delete("tab"); else next.set("tab", key);
+    setParams(next, { replace: true });
+  }
 
-        {isLoading ? <p className="lpMuted">{t("listing.loading")}</p> : isError || !business ? (
-          <div className="lpEmpty"><IconBadge icon={SearchX} /><h1>{t("listing.unavailable")}</h1><Link className="obBtn" to="/mysobo">{t("nav.explore")}</Link></div>
-        ) : (
-          <>
-            <div className={`lpCover ${business.logo ? "hasLogo" : ""}`}>
-              <button type="button" className="lpCoverBtn" disabled={!gallery.length} onClick={() => setViewer(Math.max(0, gallery.indexOf(business.cover_image ?? "")))} aria-label={t("lp.photos")}>
+  const contactCard = business ? (
+    <section className="lvCard lvContact" aria-label={t("lp.contact")}>
+      <p className="lvLabel">{t("lp.contact")}</p>
+      {business.contact_locked ? (
+        <>
+          <div className="lvPhone"><span className="lvRound"><LockIcon /></span><div><small>{t("lp.phone")}</small><b className="masked">{business.phone_masked || "XXXXX XXXXX"}</b></div></div>
+          <p className="lvMuted">{t("lp.lockedText")}</p>
+          <button type="button" className="lvBtn primary" onClick={askLogin}>{t("lp.loginToSee")}</button>
+        </>
+      ) : business.phone ? (
+        <>
+          <div className="lvPhone"><span className="lvRound"><PhoneIcon /></span><div><small>{t("lp.phone")}</small><b>{pretty(business.phone)}</b></div></div>
+          <div className="lvBtnRow">
+            <button type="button" className="lvBtn primary" onClick={() => contact("call", telHref(business.phone))}><PhoneIcon />{t("listing.call")}</button>
+            {business.whatsapp && <button type="button" className="lvBtn" onClick={() => contact("whatsapp", waHref(business.whatsapp))}><ChatIcon />{t("listing.whatsapp")}</button>}
+          </div>
+        </>
+      ) : <p className="lvMuted">{t("lp.noPhone")}</p>}
+    </section>
+  ) : null;
+
+  const facts = business ? (
+    <section className="lvCard">
+      <p className="lvLabel">{t("lv.details")}</p>
+      <dl className="lvFacts">
+        {business.address && !business.hide_address && <div><dt>{t("form.address")}</dt><dd>{business.address}</dd></div>}
+        {todayHours && <div><dt>{t("lp.today")}</dt><dd><span className={openNow ? "lvDot open" : "lvDot"} />{todayHours.closed ? t("lp.closed") : `${hm(todayHours.opens)} – ${hm(todayHours.closes)}`}</dd></div>}
+        <div><dt>{t("lv.type")}</dt><dd>{kindLabel}</dd></div>
+        {(business.home_visit || business.onsite_visit) && <div><dt>{t("ob.visitTitle")}</dt><dd>{[business.home_visit && t("cards.homeVisit"), business.onsite_visit && t("lv.onsite")].filter(Boolean).join(" · ")}</dd></div>}
+        <div><dt>{t("lv.status")}</dt><dd>{business.verified ? <span className="lvVerified">✓ {t("vf.verified")}</span> : t("lv.notVerified")}</dd></div>
+      </dl>
+    </section>
+  ) : null;
+
+  return (
+    <Shell user={user} onAuthChange={onAuthChange} dashboard>
+      {isLoading ? <div className="lvState"><p className="lpMuted">{t("listing.loading")}</p></div> : isError || !business ? (
+        <div className="lvState"><div className="lpEmpty"><IconBadge icon={SearchX} /><h1>{t("listing.unavailable")}</h1><Link className="obBtn" to="/mysobo">{t("nav.explore")}</Link></div></div>
+      ) : (
+        <div className="lv">
+          <aside className="lvSide" aria-label={business.name}>
+            <button type="button" className="lvBack" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/mysobo"))}><BackIcon />{t("lp.back")}</button>
+            <div className="lvIdentity">
+              <span className="lvLogo">{business.logo ? <img src={business.logo} alt="" /> : business.name.charAt(0).toUpperCase()}</span>
+              <div><b>{business.name}</b><small>{business.subcategory?.name || business.category?.name || kindLabel}</small></div>
+            </div>
+            <nav className="lvNav" aria-label={t("lv.sections")}>
+              {tabs.map((tab) => (
+                <button key={tab.key} type="button" className={tab.key === activeTab ? "on" : ""} aria-current={tab.key === activeTab ? "page" : undefined} onClick={() => openTab(tab.key)}>
+                  <span>{tab.label}</span>{tab.count ? <em>{tab.count}</em> : null}
+                </button>
+              ))}
+            </nav>
+          </aside>
+
+          <section className="lvMain">
+            <header className="lvHead">
+              <button type="button" className="lvThumb" disabled={!gallery.length} onClick={() => setViewer(Math.max(0, gallery.indexOf(business.cover_image ?? "")))} aria-label={t("lp.photos")}>
                 <img src={coverFor(business)} alt="" />
               </button>
-              {business.logo && <img className="lpLogo" src={business.logo} alt={`${business.name} logo`} />}
-            </div>
-            <header className="lpHead">
-              {business.category && <span className="lpChip">{business.category.name}</span>}
-              <h1>{business.name}{business.verified && <span className="vBadge">✓ {t("vf.verified")}</span>}</h1>
-              <p className="lpMeta">
-                {business.review_count ? <span className="lpStars">★ {(business.average_rating ?? 0).toFixed(1)} <em>({t("cards.reviews", { n: business.review_count })})</em></span> : null}
-                <span>{kindLabel}</span>
-                {todayHours && <span className={openNow ? "lpOpen" : "lpClosed"}>{openNow ? t("lp.openNow") : t("lp.closedNow")}</span>}
-              </p>
-              {business.address && !business.hide_address && <p className="lpArea">{business.address}</p>}
-            </header>
-
-            <section className="lpContact" aria-label={t("lp.contact")}>
-              {business.contact_locked ? (
-                <>
-                  <div className="lpContactRow">
-                    <span className="lpRound"><LockIcon /></span>
-                    <div>
-                      <p className="lpLabel">{t("lp.phone")}</p>
-                      <p className="lpNumber masked">{business.phone_masked || "XXXXX XXXXX"}</p>
-                    </div>
-                  </div>
-                  <p className="lpHint">{t("lp.lockedText")}</p>
-                  <button type="button" className="obBtn lpWide" onClick={askLogin}>{t("lp.loginToSee")}</button>
-                </>
-              ) : business.phone ? (
-                <>
-                  <div className="lpContactRow">
-                    <span className="lpRound"><PhoneIcon /></span>
-                    <div>
-                      <p className="lpLabel">{t("lp.phone")}</p>
-                      <p className="lpNumber">{pretty(business.phone)}</p>
-                    </div>
-                  </div>
-                  <div className="lpActions">
-                    <button type="button" className="obBtn" onClick={() => contact("call", telHref(business.phone))}><PhoneIcon />{t("listing.call")}</button>
-                    {business.whatsapp && <button type="button" className="obBtn outline" onClick={() => contact("whatsapp", waHref(business.whatsapp))}><ChatIcon />{t("listing.whatsapp")}</button>}
-                  </div>
-                </>
-              ) : <p className="lpHint">{t("lp.noPhone")}</p>}
-            </section>
-
-            {gallery.length > 0 && (
-              <section className="lpSection">
-                <h2>{t("lp.photos")}</h2>
-                <ul className="lpGallery">
-                  {gallery.slice(0, 6).map((url, index) => (
-                    <li key={url}>
-                      <button type="button" onClick={() => setViewer(index)} aria-label={t("ph.previewN", { n: index + 1 })}>
-                        <img src={url} alt="" loading="lazy" />
-                        {index === 5 && gallery.length > 6 && <span className="lpGalleryMore">{t("lp.seeAll", { n: gallery.length })}</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {viewer !== null && gallery[viewer] && (
-              <Lightbox urls={gallery} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} />
-            )}
-
-            {offers.length > 0 && (
-              <section className="lpSection">
-                <h2>{t("r3.offersOnListing")}</h2>
-                <ul className="lpOffers">
-                  {offers.map((offer) => (
-                    <li key={offer.id}>
-                      <span className="lpOfferTag">%</span>
-                      <div><p className="lpItem">{offer.title}</p>{offer.body && <p className="lpMuted">{offer.body}</p>}
-                        {offer.expires_on && <p className="lpMuted">{t("r3.until", { date: new Date(offer.expires_on).toLocaleDateString(locale, { day: "numeric", month: "short" }) })}</p>}</div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {business.description && (
-              <section className="lpSection">
-                <h2>{t("lp.about")}</h2>
-                <p className="lpText">{business.description}</p>
-                {business.description_locked && <button type="button" className="lpReadMore" onClick={askLogin}>{t("cards.readMore")}</button>}
-              </section>
-            )}
-
-            {catalog.length > 0 && (
-              <section className="lpSection">
-                <h2>{business.kind === "product" ? t("lp.products") : business.kind === "both" ? t("lp.servicesProducts") : t("lp.services")}</h2>
-                <ul className="lpList">
-                  {catalog.map((item) => {
-                    const isProduct = "price" in item;
-                    const price = isProduct ? money((item as BusinessProduct).price) : money((item as BusinessService).price_min);
-                    const detail = isProduct ? [(item as BusinessProduct).brand, (item as BusinessProduct).model].filter(Boolean).join(" · ") : item.description;
-                    return (
-                      <li key={item.id}>
-                        <div><p className="lpItem">{item.name}</p>{detail && <p className="lpMuted">{detail}</p>}</div>
-                        {price && <span className="lpPrice">{isProduct ? price : t("lp.from", { price })}</span>}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
-            {hours.length > 0 && (
-              <section className="lpSection">
-                <h2>{t("lp.hours")}</h2>
-                <ul className="lpHours">
-                  {hours.map((item) => (
-                    <li key={item.dow} className={item.dow === today ? "today" : ""}>
-                      <span>{dayName(item.dow)}{item.dow === today && <em>{t("lp.today")}</em>}</span>
-                      <span>{item.closed ? t("lp.closed") : `${hm(item.opens)} – ${hm(item.closes)}`}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            <section className="lpSection">
-              <div className="lpSectionHead">
-                <h2>{t("listing.reviews")}</h2>
-                {business.review_count ? <span className="lpStars big">★ {(business.average_rating ?? 0).toFixed(1)}</span> : null}
+              <div className="lvTitle">
+                <p className="lvCrumb">{business.category && <Link to={`/${business.kind === "product" ? "products" : "services"}/${business.category.slug}`}>{business.category.name}</Link>}{business.subcategory && <> › <span>{business.subcategory.name}</span></>}</p>
+                <h1>{business.name}{business.verified && <span className="lvVerified">✓ {t("vf.verified")}</span>}</h1>
+                <p className="lvMeta">
+                  {business.review_count ? <span className="lvStars">★ {(business.average_rating ?? 0).toFixed(1)} <em>({t("cards.reviews", { n: business.review_count })})</em></span> : <span>{t("ln.noReviews")}</span>}
+                  {todayHours && <span className={openNow ? "lvOpen" : "lvClosed"}>{openNow ? t("lp.openNow") : t("lp.closedNow")}</span>}
+                  {business.address && !business.hide_address && <span className="lvArea">{business.address}</span>}
+                </p>
               </div>
-              {reviews.length ? (
-                <ul className="lpReviews">
-                  {reviews.map((review) => (
-                    <li key={review.id}>
-                      <span className="lpAvatar">{(review.user_name || "?").charAt(0).toUpperCase()}</span>
-                      <div>
-                        <p className="lpItem">{review.user_name}</p>
-                        <p className="lpReviewStars" aria-label={t("listing.stars", { n: review.rating })}>{"★".repeat(review.rating)}<span>{"★".repeat(5 - review.rating)}</span></p>
-                        {review.body && <p className="lpText">{review.body}</p>}
-                      </div>
+              <div className="lvActions">
+                <button type="button" className="lvIcon" onClick={() => void share()} aria-label={t("lp.share")}><ShareIcon /></button>
+                <button type="button" className={`lvIcon ${saved?.saved ? "on" : ""}`} onClick={() => void toggleSaved()} aria-pressed={Boolean(saved?.saved)} aria-label={saved?.saved ? t("listing.saved") : t("listing.save")}><HeartIcon on={Boolean(saved?.saved)} /></button>
+              </div>
+            </header>
+            <nav className="lvTabs" aria-label={t("lv.sections")}>
+              {tabs.map((tab) => (
+                <button key={tab.key} type="button" className={tab.key === activeTab ? "on" : ""} onClick={() => openTab(tab.key)}>{tab.label}{tab.count ? <em>{tab.count}</em> : null}</button>
+              ))}
+            </nav>
+
+            <div className="lvBody" ref={body}>
+              {message && <p className="lpMessage" role="status">{message}</p>}
+              {activeTab === "overview" && (
+                <div className="lvOverview">
+                  <div className="lvNarrowOnly">{contactCard}</div>
+                  <section className="lvCard">
+                    <p className="lvLabel">{t("lp.about")}</p>
+                    <p className="lvText">{business.description || t("cards.inSouthBopal", { kind: kindLabel })}</p>
+                    {business.description_locked && <button type="button" className="lvLink" onClick={askLogin}>{t("cards.readMore")}</button>}
+                  </section>
+                  {offers.length > 0 && (
+                    <button type="button" className="lvCard lvOfferTeaser" onClick={() => openTab("offers")}>
+                      <span className="lvOfferTag">%</span><span><b>{offers[0].title}</b><small>{offers.length > 1 ? t("lv.moreOffers", { n: offers.length - 1 }) : offers[0].body}</small></span><span aria-hidden="true">→</span>
+                    </button>
+                  )}
+                  {gallery.length > 0 && (
+                    <section className="lvCard">
+                      <div className="lvCardHead"><p className="lvLabel">{t("lp.photos")}</p>{gallery.length > 4 && <button type="button" className="lvLink" onClick={() => openTab("photos")}>{t("lp.seeAll", { n: gallery.length })}</button>}</div>
+                      <ul className="lvStrip">{gallery.slice(0, 4).map((url, index) => <li key={url}><button type="button" onClick={() => setViewer(index)} aria-label={t("ph.previewN", { n: index + 1 })}><img src={url} alt="" loading="lazy" /></button></li>)}</ul>
+                    </section>
+                  )}
+                  {catalog.length > 0 && (
+                    <section className="lvCard">
+                      <div className="lvCardHead"><p className="lvLabel">{tabs.find((tab) => tab.key === "catalog")?.label}</p>{catalog.length > 4 && <button type="button" className="lvLink" onClick={() => openTab("catalog")}>{t("rd.seeAll")}</button>}</div>
+                      <CatalogTable items={catalog.slice(0, 4)} />
+                    </section>
+                  )}
+                  <div className="lvNarrowOnly">{facts}</div>
+                </div>
+              )}
+              {activeTab === "catalog" && <section className="lvCard"><CatalogTable items={catalog} /></section>}
+              {activeTab === "offers" && (
+                <ul className="lvOffers">
+                  {offers.map((offer) => (
+                    <li key={offer.id} className="lvCard">
+                      <span className="lvOfferTag">%</span>
+                      <div><b>{offer.title}</b>{offer.body && <p className="lvMuted">{offer.body}</p>}
+                        {offer.expires_on && <p className="lvMuted">{t("r3.until", { date: new Date(offer.expires_on).toLocaleDateString(locale, { day: "numeric", month: "short" }) })}</p>}</div>
                     </li>
                   ))}
                 </ul>
-              ) : <p className="lpMuted">{t("listing.noReviews")}</p>}
-
-              {!signedIn ? (
-                <div className="lpGate">
-                  <span className="lpRound"><LockIcon /></span>
-                  <p>{t("lp.loginToReviewText")}</p>
-                  <button type="button" className="obBtn outline lpWide" onClick={askLogin}>{t("lp.loginToReview")}</button>
-                </div>
-              ) : !alreadyReviewed && (
-                <form className="lpReviewForm" onSubmit={submitReview}>
-                  <p className="lpLabel">{t("lp.yourRating")}</p>
-                  <div className="lpStarPick" role="radiogroup" aria-label={t("lp.yourRating")}>
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={t("listing.stars", { n: value })} className={value <= rating ? "on" : ""} onClick={() => setRating(value)}>★</button>
-                    ))}
-                  </div>
-                  <textarea name="review" rows={3} placeholder={t("listing.reviewPh")} aria-label={t("listing.yourReview")} />
-                  <button className="obBtn lpWide" type="submit">{t("listing.post")}</button>
-                </form>
               )}
-              {message && <p className="lpMessage" role="status">{message}</p>}
-            </section>
-          </>
-        )}
-      </article>
+              {activeTab === "photos" && (
+                <ul className="lvGallery">{gallery.map((url, index) => <li key={url}><button type="button" onClick={() => setViewer(index)} aria-label={t("ph.previewN", { n: index + 1 })}><img src={url} alt="" loading="lazy" /></button></li>)}</ul>
+              )}
+              {activeTab === "hours" && (
+                <section className="lvCard">
+                  <ul className="lvHours">
+                    {hours.map((item) => (
+                      <li key={item.dow} className={item.dow === today ? "today" : ""}>
+                        <span>{dayName(item.dow)}{item.dow === today && <em>{t("lp.today")}</em>}</span>
+                        <span>{item.closed ? t("lp.closed") : `${hm(item.opens)} – ${hm(item.closes)}`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {activeTab === "reviews" && (
+                <div className="lvReviewsWrap">
+                  <section className="lvCard">
+                    {reviews.length ? (
+                      <ul className="lpReviews">
+                        {reviews.map((review) => (
+                          <li key={review.id}>
+                            <span className="lpAvatar">{(review.user_name || "?").charAt(0).toUpperCase()}</span>
+                            <div>
+                              <p className="lpItem">{review.user_name}</p>
+                              <p className="lpReviewStars" aria-label={t("listing.stars", { n: review.rating })}>{"★".repeat(review.rating)}<span>{"★".repeat(5 - review.rating)}</span></p>
+                              {review.body && <p className="lpText">{review.body}</p>}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p className="lvMuted">{t("listing.noReviews")}</p>}
+                  </section>
+                  <section className="lvCard">
+                    {!signedIn ? (
+                      <div className="lpGate"><span className="lvRound"><LockIcon /></span><p>{t("lp.loginToReviewText")}</p><button type="button" className="lvBtn" onClick={askLogin}>{t("lp.loginToReview")}</button></div>
+                    ) : alreadyReviewed ? <p className="lvMuted">{t("lv.reviewed")}</p> : (
+                      <form className="lpReviewForm" onSubmit={submitReview}>
+                        <p className="lvLabel">{t("lp.yourRating")}</p>
+                        <div className="lpStarPick" role="radiogroup" aria-label={t("lp.yourRating")}>
+                          {[1, 2, 3, 4, 5].map((value) => (
+                            <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={t("listing.stars", { n: value })} className={value <= rating ? "on" : ""} onClick={() => setRating(value)}>★</button>
+                          ))}
+                        </div>
+                        <textarea name="review" rows={3} placeholder={t("listing.reviewPh")} aria-label={t("listing.yourReview")} />
+                        <button className="lvBtn primary" type="submit">{t("listing.post")}</button>
+                      </form>
+                    )}
+                  </section>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="lvRight" aria-label={t("lp.contact")}>
+            {contactCard}
+            {facts}
+          </aside>
+          {viewer !== null && gallery[viewer] && <Lightbox urls={gallery} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} />}
+        </div>
+      )}
     </Shell>
+  );
+}
+
+function CatalogTable({ items }: { items: (BusinessService | BusinessProduct)[] }) {
+  const { t } = useT();
+  return (
+    <table className="lvTable">
+      <tbody>
+        {items.map((item) => {
+          const isProduct = "price" in item;
+          const price = isProduct ? money((item as BusinessProduct).price) : money((item as BusinessService).price_min);
+          const detail = isProduct ? [(item as BusinessProduct).brand, (item as BusinessProduct).model].filter(Boolean).join(" · ") : item.description;
+          return (
+            <tr key={item.id}>
+              <td><b>{item.name}</b>{detail && <small>{detail}</small>}</td>
+              <td className="lvPrice">{price ? (isProduct ? price : t("lp.from", { price })) : "—"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

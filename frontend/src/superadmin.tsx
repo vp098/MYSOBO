@@ -7,7 +7,7 @@ import { coverFor } from "./covers";
 import { LeafMark } from "./logo";
 import { AdminInvoices, AdminPricing, type AdminPlan } from "./adminBilling";
 import { AdminTickets, type Ticket } from "./support";
-import { AdminOverview, AdminUsers } from "./adminOverview";
+import { AdminCatalog, AdminOverview, AdminUsers } from "./adminOverview";
 import { DashTabbar, useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
 
@@ -192,7 +192,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "verification" && <Verification claims={claims} pending={pendingApprovals} run={run} />}
           {active.path === "businesses" && <AllBusinesses businesses={businesses} run={run} />}
           {active.path === "categories" && <><SaHead title="Categories & subcategories" copy="Main categories, nested subcategories, listing type, order, icons and images." /><section className="odCard"><CategoryManager run={run} /></section></>}
-          {active.path === "catalog" && <><SaHead title="Products & services" copy="Custom fields per category: label, key, type (text, number, yes/no, choice), show as filter and required. Open a category below and use its fields section." /><section className="odCard"><CategoryManager run={run} /></section></>}
+          {active.path === "catalog" && <><AdminCatalog run={run} /><SaHead title="Category fields" copy="Custom fields per category: label, key, type (text, number, yes/no, choice), show as filter and required. Open a category below and use its fields section." /><section className="odCard"><CategoryManager run={run} /></section></>}
           {active.path === "offers" && <Offers posts={posts} run={run} />}
           {active.path === "plan-requests" && <PlanRequests requests={planRequests} run={run} />}
           {active.path === "pricing" && <AdminPricing plans={plans} run={run} />}
@@ -200,7 +200,7 @@ export function SuperAdminDashboard({ user, onAuthChange }: { user?: PortalUser;
           {active.path === "reports" && <Reports reports={reports} run={run} />}
           {active.path === "audit" && <><SaHead title="Admin activity / audit history" copy="Every approval, rejection, payment and settings change, newest first." /><section className="odCard"><AuditList rows={audit} /></section></>}
           {active.path === "support" && <AdminTickets />}
-          {active.path === "users" && <AdminUsers />}
+          {active.path === "users" && <AdminUsers me={user.id} />}
           {active.path === "settings" && <><SettingsForm settings={settings} run={run} /><section className="odCard saTheme"><ThemePicker user={user} /></section></>}
         </div>
       </div>
