@@ -180,7 +180,7 @@ class AdminTicketActionView(APIView):
 
     @transaction.atomic
     def post(self, request, ticket_id):
-        ticket = get_object_or_404(Ticket.objects.select_for_update().select_related("user", "business"), id=ticket_id)
+        ticket = get_object_or_404(Ticket.objects.select_for_update(of=("self",)).select_related("user", "business"), id=ticket_id)
         body = _clean(request.data.get("body"), 4000)
         new_status = request.data.get("status")
         if new_status is not None and new_status not in Ticket.Status.values:
