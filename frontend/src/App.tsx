@@ -413,6 +413,7 @@ export function BusinessCards({ businesses }: { businesses: Business[] }) {
                   {business.verified && <span className="bizVerified">✓ {t("vf.verified")}</span>}
                   {business.review_count ? <span className="bizRating">★ {(business.average_rating ?? 0).toFixed(1)} <em>({business.review_count})</em></span> : null}
                   <span className="bizKind">{kindLabel}</span>
+                  {business.home_visit && <span className="bizKind">{t("cards.homeVisit")}</span>}
                   {openState(business) && <span className={openState(business) === "open" ? "bizOpenNow" : "bizClosedNow"}>{openState(business) === "open" ? t("lp.openNow") : t("lp.closedNow")}</span>}
                 </span>
                 <span className="bizDesc">{business.description || t("cards.inSouthBopal", { kind: kindLabel })}</span>
@@ -1286,8 +1287,9 @@ function BusinessClassificationFields({
   );
 }
 
-export function EditBusinessForm({ business, onSubmit, open = false, pending = false }: {
+export function EditBusinessForm({ business, onSubmit, open = false, pending = false, extra }: {
   business: Business;
+  extra?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   open?: boolean;
   pending?: boolean;
@@ -1311,16 +1313,19 @@ export function EditBusinessForm({ business, onSubmit, open = false, pending = f
         <label>{t("form.phone")}<input name="phone" defaultValue={business.phone} /></label>
         <label>{t("form.whatsapp")}<input name="whatsapp" defaultValue={business.whatsapp} /></label>
         <label>{t("form.address")}<input name="address" defaultValue={business.address ?? ""} /></label>
+        {extra}
         <button className="button" type="submit" disabled={pending}>{t("form.save")}</button>
       </form>
     </details>
   );
 }
 
-export function BusinessForm({ onSubmit, defaultKind = "service", pending = false }: {
+export function BusinessForm({ onSubmit, defaultKind = "service", pending = false, extra, submitLabel }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   defaultKind?: Business["kind"];
   pending?: boolean;
+  extra?: ReactNode;
+  submitLabel?: string;
 }) {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => apiGet<Category[]>("/categories/") });
   const { t } = useT();
@@ -1333,7 +1338,8 @@ export function BusinessForm({ onSubmit, defaultKind = "service", pending = fals
       <label>{t("form.phone")}<input name="phone" inputMode="tel" /></label>
       <label>{t("form.whatsapp")}<input name="whatsapp" inputMode="tel" /></label>
       <label>{t("form.address")}<input name="address" /></label>
-      <button className="button" type="submit" disabled={pending}>{t("form.create")}</button>
+      {extra}
+      <button className="button" type="submit" disabled={pending}>{submitLabel ?? t("form.create")}</button>
     </form>
   );
 }

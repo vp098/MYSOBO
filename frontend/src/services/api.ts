@@ -149,6 +149,10 @@ export type Business = {
   source?: string;
   email?: string;
   website?: string;
+  home_visit?: boolean;
+  onsite_visit?: boolean;
+  /** Owners and admins only. */
+  gst_number?: string;
   logo?: string;
   cover_image?: string;
   photos?: string[];
@@ -229,6 +233,7 @@ export type PortalUser = {
   theme: "warm" | "neutral" | "light" | "dark";
   has_business: boolean;
   home: string;
+  avatar?: string;
 };
 
 export type Review = {

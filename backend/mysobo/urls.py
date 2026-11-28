@@ -35,6 +35,8 @@ from directory.portal_views import (
     OwnerPlansView,
     PublicPlansView,
     OwnerPostsView,
+    OwnerPostDetailView,
+    AvatarView,
 )
 
 urlpatterns = [
@@ -58,6 +60,8 @@ urlpatterns = [
     path("api/owner/claimable/", OwnerClaimableBusinessesView.as_view(), name="owner-claimable"),
     path("api/owner/claims/", OwnerClaimsView.as_view(), name="owner-claims"),
     path("api/owner/posts/", OwnerPostsView.as_view(), name="owner-posts"),
+    path("api/owner/posts/<uuid:post_id>/", OwnerPostDetailView.as_view(), name="owner-post-detail"),
+    path("api/me/avatar/", AvatarView.as_view(), name="me-avatar"),
     path("api/plans/", PublicPlansView.as_view(), name="public-plans"),
     path("api/owner/plans/", OwnerPlansView.as_view(), name="owner-plans"),
     path("api/admin/dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),

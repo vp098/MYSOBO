@@ -1,5 +1,6 @@
 import { useScrollMainToTop } from "./dashboard";
 import { ThemePicker } from "./theme";
+import { ApprovalRequests, AvatarPicker, BusinessExtraFields, OffersManager, OnboardingWizard } from "./ownerFlows";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { IconBadge } from "./iconBadge";
 import { PhotoLibrary } from "./photos";
@@ -9,9 +10,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, 
 import { motion } from "framer-motion";
 import { apiGet, apiPatch, apiPost, apiPut, type Business, type PortalUser } from "./services/api";
 import { LANGUAGES, useT, type MessageKey } from "./i18n";
-import { BusinessForm, EditBusinessForm, Shell, categoryDataFromForm } from "./App";
+import { EditBusinessForm, Shell, categoryDataFromForm } from "./App";
 import { coverFor } from "./covers";
-import { LeafMark, PinScene } from "./logo";
+import { LeafMark } from "./logo";
 
 /*
  * Business owner dashboard at /sobo/business-owner/*.
@@ -20,20 +21,21 @@ import { LeafMark, PinScene } from "./logo";
  * MySobo team approves it. Colours come from the palette tokens in styles.css.
  */
 
-type PlanKey = "free" | "pro" | "premium";
+export type PlanKey = "free" | "pro" | "premium";
 type ListingState = "live" | "waiting" | "draft";
-type OwnerPlans = {
+export type OwnerPlans = {
   plans: { plan: string; monthly_price: number }[];
   subscriptions: { id: string; business_id: string; plan: string; status: string; expires_on: string | null }[];
   requests: { id?: string; business_id: string; requested_plan: string; status: string; created_at?: string }[];
 };
-type OwnerPost = { id: string; business: string; title: string; body: string; status: string; expires_on?: string | null; created_at?: string };
+export type OwnerPost = { id: string; business: string; title: string; body: string; status: string; starts_on?: string | null; expires_on?: string | null; created_at?: string };
 
 type Section = { path: string; key: MessageKey; icon: string };
 const GROUPS: { label?: MessageKey; items: Section[] }[] = [
   { items: [{ path: "", key: "od.nav.overview", icon: "grid" }] },
   { label: "od.group.listings", items: [
     { path: "businesses", key: "od.nav.businesses", icon: "store" },
+    { path: "approvals", key: "ap.nav", icon: "send" },
     { path: "add", key: "od.nav.add", icon: "plus" },
     { path: "photos", key: "ph.nav", icon: "image" },
     { path: "verify", key: "vf.nav", icon: "shield" },
@@ -41,6 +43,7 @@ const GROUPS: { label?: MessageKey; items: Section[] }[] = [
   { label: "od.group.grow", items: [
     { path: "offers", key: "od.nav.offers", icon: "tag" },
     { path: "plans", key: "od.nav.plans", icon: "card" },
+    { path: "invoices", key: "r3.invoices", icon: "note" },
   ] },
   { label: "od.group.account", items: [
     { path: "profile", key: "od.nav.profile", icon: "user" },
@@ -97,13 +100,13 @@ export function listingState(business: Business): ListingState {
   return business.approval_requested_at ? "waiting" : "draft";
 }
 
-function useDate() {
+export function useDate() {
   const { lang } = useT();
   const locale = lang === "gu" ? "gu-IN" : lang === "hi" ? "hi-IN" : "en-IN";
   return (value?: string | null) => value ? new Date(value).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }) : "";
 }
 
-function StateBadge({ state }: { state: ListingState }) {
+export function StateBadge({ state }: { state: ListingState }) {
   const { t } = useT();
   const map: Record<ListingState, { cls: string; key: MessageKey; icon: string }> = {
     live: { cls: "ok", key: "od.state.live", icon: "live" },
@@ -125,7 +128,7 @@ function RequestBadge({ status }: { status: string }) {
   return <span className={`odBadge ${item.cls}`}>{t(item.key)}</span>;
 }
 
-function OfferBadge({ post }: { post: OwnerPost }) {
+export function OfferBadge({ post }: { post: OwnerPost }) {
   const { t } = useT();
   const expired = Boolean(post.expires_on && post.expires_on < new Date().toISOString().slice(0, 10));
   if (post.status === "approved" && expired) return <span className="odBadge muted">{t("r3.expired")}</span>;
@@ -134,12 +137,12 @@ function OfferBadge({ post }: { post: OwnerPost }) {
   return <span className="odBadge wait">{t("r3.review")}</span>;
 }
 
-function PlanBadge({ plan }: { plan: PlanKey }) {
+export function PlanBadge({ plan }: { plan: PlanKey }) {
   const { t } = useT();
   return <span className={`odPlan ${plan}`}>{plan !== "free" && <Icon name="star" size={12} />}{t(`od.plan.${plan}` as MessageKey)}</span>;
 }
 
-type Perform = <T>(action: () => Promise<T>, success: string) => Promise<T | null>;
+export type Perform = <T>(action: () => Promise<T>, success: string) => Promise<T | null>;
 
 export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
   const section = (useParams()["*"] ?? "").split("/")[0];
@@ -194,12 +197,12 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
       <Link to={to("offers")} className={active.path === "offers" ? "active" : ""} aria-current={active.path === "offers" ? "page" : undefined} onClick={clear}>
         <Icon name="tag" size={22} /><span>{t("od.tab.offers")}</span>
       </Link>
-      <button type="button" className={["photos", "plans", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
+      <button type="button" className={["approvals", "photos", "plans", "invoices", "profile", "help"].includes(active.path) ? "active" : ""} aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
         <Icon name="more" size={22} /><span>{t("od.tab.more")}</span>
       </button>
       {moreOpen && (
         <div className="odSheet" role="menu">
-          {(["photos", "plans", "profile", "help"] as const).map((path) => {
+          {(["approvals", "photos", "plans", "invoices", "profile", "help"] as const).map((path) => {
             const item = SECTIONS.find((entry) => entry.path === path)!;
             return <Link role="menuitem" key={path} to={to(path)} onClick={clear}><Icon name={item.icon} />{t(item.key)}</Link>;
           })}
@@ -213,7 +216,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
       <div className="odLayout">
         <aside className="odSide" aria-label={t("od.workspace")}>
           <Link className="odUser" to={to("profile")} onClick={clear}>
-            <span className="odAvatar">{(user.name || user.email || user.username).charAt(0).toUpperCase()}</span>
+            <span className="odAvatar">{user.avatar ? <img src={user.avatar} alt="" /> : (user.name || user.email || user.username).charAt(0).toUpperCase()}</span>
             <span className="odUserName">{user.name || user.email || t("od.owner")}</span>
             <Icon name="chevron" size={16} />
           </Link>
@@ -258,10 +261,12 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
           )}
           {active.path === "" && <Overview user={user} {...data} />}
           {active.path === "businesses" && <MyBusinesses {...data} />}
-          {active.path === "add" && <AddBusiness {...data} />}
+          {active.path === "add" && <OnboardingWizard {...data} />}
+          {active.path === "approvals" && <ApprovalRequests {...data} />}
+          {active.path === "invoices" && <><PageHead title={t("r3.invoices")} copy={t("inv.copy")} /><Invoices /></>}
           {active.path === "photos" && <PhotoLibrary owned={owned} />}
           {active.path === "verify" && <VerifyListing />}
-          {active.path === "offers" && <Offers {...data} />}
+          {active.path === "offers" && <OffersManager {...data} />}
           {active.path === "plans" && <Plans {...data} />}
           {active.path === "profile" && <Profile user={user} />}
           {active.path === "help" && <Help />}
@@ -282,7 +287,7 @@ export function OwnerDashboard({ user, onAuthChange }: { user?: PortalUser; onAu
   );
 }
 
-type DashData = {
+export type DashData = {
   owned: Business[];
   plans?: OwnerPlans;
   posts: OwnerPost[];
@@ -319,7 +324,7 @@ function ApprovalPrompt({ business, onClose, onSend }: { business: Business; onC
   );
 }
 
-function PageHead({ title, copy, children }: { title: string; copy?: string; children?: ReactNode }) {
+export function PageHead({ title, copy, children }: { title: string; copy?: string; children?: ReactNode }) {
   return (
     <header className="odPageHead">
       <div><h1>{title}</h1>{copy && <p>{copy}</p>}</div>
@@ -880,6 +885,7 @@ function MyBusinesses({ owned, isLoading, perform, askApproval }: DashData) {
           <div className="odCardHead"><h2>{t("od.editing", { name: editingBusiness.name })}</h2><button type="button" className="odBtn outline small" onClick={() => setEditing("")}>{t("close")}</button></div>
           <EditBusinessForm
             business={editingBusiness}
+            extra={<BusinessExtraFields business={editingBusiness} />}
             open
             onSubmit={(event) => {
               event.preventDefault();
@@ -894,6 +900,10 @@ function MyBusinesses({ owned, isLoading, perform, askApproval }: DashData) {
                 phone: form.get("phone"),
                 whatsapp: form.get("whatsapp"),
                 address: form.get("address"),
+                email: form.get("email") ?? "",
+                gst_number: String(form.get("gst_number") ?? "").trim().toUpperCase(),
+                home_visit: form.get("home_visit") === "on",
+                onsite_visit: form.get("onsite_visit") === "on",
               }), t("owner.updated"));
             }}
           />
@@ -982,170 +992,6 @@ function BusinessExtras({ business, perform }: { business: Business; perform: Pe
         <span><b>{t("r3.hideAddress")}</b><small>{t("r3.hideAddressHint")}</small></span>
       </label>
     </div>
-  );
-}
-
-/* ---------- Add business ---------- */
-
-const GOALS: { key: MessageKey; icon: string }[] = [
-  { key: "wiz.g.calls", icon: "phone" },
-  { key: "wiz.g.prices", icon: "rupee" },
-  { key: "wiz.g.offers", icon: "tag" },
-  { key: "wiz.g.reviews", icon: "star" },
-  { key: "wiz.g.hours", icon: "clock" },
-  { key: "wiz.g.reach", icon: "store" },
-];
-
-function AddBusiness({ perform, askApproval, owned }: DashData & { user?: PortalUser }) {
-  const { t } = useT();
-  const navigate = useNavigate();
-  const [formKey, setFormKey] = useState(0);
-  const [step, setStep] = useState(0);
-  const [kind, setKind] = useState<Business["kind"] | "">("");
-  const [goals, setGoals] = useState<string[]>([]);
-
-  async function createBusiness(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const name = String(form.get("name") ?? "");
-    const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "business"}-${Date.now().toString(36)}`;
-    const created = await perform(() => apiPost<Business>("/businesses/", {
-      name, slug, kind: form.get("kind"), description: form.get("description"),
-      phone: form.get("phone"), whatsapp: form.get("whatsapp"), address: form.get("address"),
-      category_id: form.get("category_id") || undefined,
-      subcategory_id: form.get("subcategory_id") || undefined,
-      category_data: categoryDataFromForm(form),
-    }), t("od.created"));
-    if (created) {
-      setFormKey((key) => key + 1);
-      navigate("/sobo/business-owner/businesses");
-    }
-  }
-
-  const toggleGoal = (key: string) => setGoals((list) => list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
-  const total = 2;
-
-  return (
-    <div className="wiz">
-      <div className="wizMain">
-        <div className="wizTop">
-          <span className="wizStep">{t("wiz.step", { n: step + 1, total })}</span>
-          <span className="wizBar"><span style={{ width: `${((step + 1) / total) * 100}%` }} /></span>
-        </div>
-        {step === 0 ? (
-          <>
-            <p className="wizHello">{owned.length ? t("wiz.helloBack") : t("wiz.hello")}</p>
-            <h1>{t("wiz.q1")}</h1>
-            <p className="wizHint">{t("wiz.q1Hint")}</p>
-            <div className="wizTiles two" role="radiogroup" aria-label={t("wiz.q1")}>
-              {(["service", "product", "both"] as const).map((value) => (
-                <button key={value} type="button" role="radio" aria-checked={kind === value} className={kind === value ? "on" : ""} onClick={() => setKind(value)}>
-                  <span className="wizTileIcon"><Icon name={value === "product" ? "store" : value === "service" ? "user" : "grid"} size={18} /></span>
-                  <span><b>{t(`wiz.k.${value}` as MessageKey)}</b><small>{t(`wiz.k.${value}Hint` as MessageKey)}</small></span>
-                </button>
-              ))}
-            </div>
-            <h2>{t("wiz.q2")}</h2>
-            <p className="wizHint">{t("wiz.q2Hint")}</p>
-            <div className="wizTiles" role="group" aria-label={t("wiz.q2")}>
-              {GOALS.map((goal) => (
-                <button key={goal.key} type="button" aria-pressed={goals.includes(goal.key)} className={goals.includes(goal.key) ? "on" : ""} onClick={() => toggleGoal(goal.key)}>
-                  <span className="wizTileIcon"><Icon name={goal.icon} size={18} /></span>
-                  <span><b>{t(goal.key)}</b></span>
-                </button>
-              ))}
-            </div>
-            <div className="wizNav">
-              <span />
-              <button type="button" className="odBtn" disabled={!kind} onClick={() => setStep(1)}>{t("wiz.next")} <Icon name="arrow" size={16} /></button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h1>{t("owner.addBusiness")}</h1>
-            <p className="wizHint">{t("od.addCopy")}</p>
-            <section className="odCard wizForm"><BusinessForm key={`${formKey}-${kind}`} defaultKind={kind || "service"} onSubmit={createBusiness} /></section>
-            <div className="wizNav">
-              <button type="button" className="odBtn outline" onClick={() => setStep(0)}>{t("wiz.back")}</button>
-              <span />
-            </div>
-          </>
-        )}
-      </div>
-      <aside className="wizAside" aria-hidden="true">
-        <span className="heroShape a" /><span className="heroShape b" />
-        <div className="wizAsideCard">
-          <div className="wizAsideMap"><PinScene /></div>
-          <p className="odRowTitle">{t("wiz.asideTitle")}</p>
-          <ol className="odSteps vertical">
-            <li><b>1</b>{t("od.after1")}</li>
-            <li><b>2</b>{t("od.after2")}</li>
-            <li><b>3</b>{t("od.after3")}</li>
-          </ol>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-/* ---------- Offers ---------- */
-
-function Offers({ owned, posts, perform }: DashData) {
-  const { t } = useT();
-  const date = useDate();
-  const [filter, setFilter] = useState("");
-  const [title, setTitle] = useState("");
-  const [formKey, setFormKey] = useState(0);
-  const nameOf = (id: string) => owned.find((item) => item.id === id)?.name ?? "";
-  const shown = posts.filter((post) => !filter || post.business === filter)
-    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const ok = await perform(() => apiPost("/owner/posts/", {
-      business_id: form.get("business_id"), title: form.get("title"), body: form.get("body"),
-      expires_on: form.get("expires_on") || null,
-    }), t("owner.offerSent"));
-    if (ok !== null) { setFormKey((key) => key + 1); setTitle(""); }
-  }
-
-  return (
-    <>
-      <PageHead title={t("od.nav.offers")} copy={t("od.offersCopy")} />
-      <div className="odSplit">
-        <section className="odCard">
-          <h2>{t("owner.postOffer")}</h2>
-          {owned.length ? (
-            <form key={formKey} className="stackForm" onSubmit={submit}>
-              <label>{t("owner.business")} *<select name="business_id" required defaultValue={owned.length === 1 ? owned[0].id : ""}><option value="">{t("owner.chooseListing")}</option>{owned.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-              <label><span className="odLabelRow">{t("owner.offerTitle")} *<small>{title.length}/200</small></span><input name="title" required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t("od.offerTitlePh")} /></label>
-              <label>{t("owner.details")} *<textarea name="body" required rows={4} placeholder={t("od.offerBodyPh")} /></label>
-              <label>{t("r3.expiry")}<input name="expires_on" type="date" min={new Date().toISOString().slice(0, 10)} /></label>
-              <button className="odBtn odFull" type="submit">{t("owner.submitOffer")}</button>
-            </form>
-          ) : <Empty text={t("od.addToPost")} to="add" cta={t("od.nav.add")} />}
-        </section>
-        <section className="odCard">
-          <div className="odCardHead">
-            <h2>{t("od.submittedOffers")}</h2>
-            {owned.length > 1 && <select className="odSelect" value={filter} onChange={(event) => setFilter(event.target.value)} aria-label={t("owner.business")}><option value="">{t("od.allBusinesses")}</option>{owned.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}
-          </div>
-          {shown.length ? (
-            <ul className="odOffers">
-              {shown.map((post) => (
-                <li key={post.id}>
-                  <div className="odOfferTop"><p className="odEyebrow">{nameOf(post.business)}</p><OfferBadge post={post} /></div>
-                  <h3>{post.title}</h3>
-                  {post.body && <p>{post.body}</p>}
-                  <p className="odRowMeta">{t("od.submittedOn", { date: date(post.created_at) })}{post.expires_on ? ` · ${t("r3.until", { date: date(post.expires_on) })}` : ""}</p>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="mutedText">{t("od.noOffers")}</p>}
-        </section>
-      </div>
-    </>
   );
 }
 
@@ -1334,6 +1180,7 @@ function Profile({ user }: { user: PortalUser }) {
       <div className="odSplit">
         <section className="odCard">
           <h2>{t("od.account")}</h2>
+          <AvatarPicker user={user} />
           <dl className="odFacts">
             {user.name && <div><dt>{t("od.name")}</dt><dd>{user.name}</dd></div>}
             {user.email && <div><dt>{t("od.email")}</dt><dd>{user.email}</dd></div>}

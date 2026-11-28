@@ -729,13 +729,10 @@ class BusinessViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[permissions.AllowAny])
     def offers(self, request, pk=None):
         business = self.get_object()
-        today = timezone.localdate()
-        posts = business.posts.filter(status=BusinessPost.Status.APPROVED).filter(
-            Q(expires_on__isnull=True) | Q(expires_on__gte=today)
-        ).order_by("-created_at")[:10]
+        posts = active_offers(business.posts.all())[:10]
         return Response([{
             "id": str(post.id), "title": post.title, "body": post.body,
-            "expires_on": post.expires_on, "created_at": post.created_at,
+            "starts_on": post.starts_on, "expires_on": post.expires_on, "created_at": post.created_at,
         } for post in posts])
 
     @action(detail=True, methods=["get", "post", "delete"], permission_classes=[permissions.IsAuthenticatedOrReadOnly])

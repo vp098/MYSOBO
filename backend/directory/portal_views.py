@@ -5,7 +5,7 @@ import uuid
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
@@ -53,6 +53,7 @@ class CurrentUserView(APIView):
             "account_type": profile.account_type,
             "theme": profile.theme,
             "has_business": BusinessMember.objects.filter(user=user, business__deleted_at__isnull=True).exists(),
+            "avatar": request.build_absolute_uri(profile.avatar.url) if profile.avatar else "",
             "home": home_for(user),
         })
 
@@ -193,6 +194,9 @@ class OwnerPostsView(APIView):
         business = get_object_or_404(
             Business, id=request.data.get("business_id"), members__user=request.user
         )
+        limit_error = _offer_limit_error(business)
+        if limit_error:
+            return limit_error
         serializer = BusinessPostSerializer(data={
             **request.data,
             "business": str(business.id),
@@ -200,6 +204,77 @@ class OwnerPostsView(APIView):
         serializer.is_valid(raise_exception=True)
         post = serializer.save(status=BusinessPost.Status.PENDING)
         return Response(BusinessPostSerializer(post).data, status=status.HTTP_201_CREATED)
+
+
+def _live_offers(business, exclude=None):
+    today = timezone.localdate()
+    queryset = BusinessPost.objects.filter(
+        business=business, status__in=(BusinessPost.Status.PENDING, BusinessPost.Status.APPROVED)
+    ).filter(Q(expires_on__isnull=True) | Q(expires_on__gte=today))
+    return queryset.exclude(id=exclude) if exclude else queryset
+
+
+def _offer_limit_error(business):
+    from billing.limits import active_offer_limit
+
+    limit = active_offer_limit(business.plan)
+    if _live_offers(business).count() >= limit:
+        return Response(
+            {"detail": f"Your {business.get_plan_display()} plan allows {limit} active offer(s) per listing. "
+                       "End or delete one, or upgrade your plan.", "code": "offer_limit", "limit": limit},
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
+
+
+class OwnerPostDetailView(APIView):
+    """Edit or delete one of your own offers. An edited offer goes back for review."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def _post(self, request, post_id):
+        return get_object_or_404(BusinessPost, id=post_id, business__members__user=request.user)
+
+    def patch(self, request, post_id):
+        post = self._post(request, post_id)
+        data = {key: request.data[key] for key in ("title", "body", "starts_on", "expires_on") if key in request.data}
+        serializer = BusinessPostSerializer(post, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        post = serializer.save(status=BusinessPost.Status.PENDING, reviewed_by=None)
+        return Response(BusinessPostSerializer(post).data)
+
+    def delete(self, request, post_id):
+        self._post(request, post_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AvatarView(APIView):
+    """Profile picture: upload (multipart field "file") or remove."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+        from .photo_views import PhotoError, clean_image
+
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"detail": "Choose a photo to upload."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            cleaned = clean_image(upload)
+        except PhotoError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        profile, _ = Profile.objects.get_or_create(id=request.user)
+        if profile.avatar:
+            profile.avatar.delete(save=False)
+        profile.avatar.save(cleaned.name, cleaned, save=True)
+        return Response({"avatar": request.build_absolute_uri(profile.avatar.url)})
+
+    def delete(self, request):
+        profile, _ = Profile.objects.get_or_create(id=request.user)
+        if profile.avatar:
+            profile.avatar.delete(save=True)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 PLAN_ORDER = {"free": 0, "pro": 1, "premium": 2}
