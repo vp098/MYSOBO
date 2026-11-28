@@ -1265,3 +1265,55 @@ class PhaseFInsightTests(TestCase):
         self.assertEqual(client.patch("/api/me/profile/", {"name": "Hetal  Shah"}, format="json").json()["name"], "Hetal Shah")
         self.resident.refresh_from_db()
         self.assertEqual(self.resident.last_name, "Shah")
+
+
+class SmartSearchTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # the spelling vocabulary is cached
+        food = Category.objects.create(name="Food and dining", slug="food-and-dining", supports_services=True)
+        health = Category.objects.create(name="Medical and health", slug="medical-and-health", supports_services=True)
+        grocery = Category.objects.create(name="Grocery and supermarkets", slug="grocery-and-supermarkets", supports_products=True)
+        home = Category.objects.create(name="Home services", slug="home-services-s", supports_services=True)
+        salons = Subcategory.objects.create(category=home, name="Salons", slug="salons-s")
+        restaurants = Subcategory.objects.create(category=food, name="Restaurants", slug="restaurants-s")
+        make = lambda **kw: Business.objects.create(source="owner", kind=kw.pop("kind", "service"), **kw)
+        self.salon = make(name="Glow Studio", slug="glow-studio", category=home, subcategory=salons, description="Hair and skin care.")
+        make(name="Dr Shah Child Clinic", slug="dr-shah", category=health, description="Paediatrician.")
+        make(name="Patel Provisions", slug="patel-provisions", category=grocery, kind="product")
+        sparks = make(name="Sparks Home Repair", slug="sparks", category=home, description="Fans and lights.")
+        BusinessService.objects.create(business=sparks, category=home, name="Electrician visit")
+        make(name="Spice Garden", slug="spice-garden", category=food, subcategory=restaurants)
+        make(name="Salon Hidden", slug="salon-hidden", category=home, subcategory=salons, hidden=True)
+        self.client = APIClient()
+
+    def names(self, query, **params):
+        data = self.client.get("/api/businesses/", {"q": query, **params}).json()
+        rows = data["results"] if isinstance(data, dict) else data
+        return [row["name"] for row in rows]
+
+    def test_single_words_find_real_records(self):
+        self.assertEqual(self.names("Salon"), ["Glow Studio"])  # via subcategory "Salons"; hidden listing excluded
+        self.assertIn("Dr Shah Child Clinic", self.names("doctor"))  # synonym -> clinic / medical
+        self.assertEqual(self.names("grocery"), ["Patel Provisions"])
+        self.assertEqual(self.names("electrician"), ["Sparks Home Repair"])  # via a service
+        self.assertEqual(self.names("restaurant"), ["Spice Garden"])
+
+    def test_partial_case_plural_and_typos(self):
+        self.assertEqual(self.names("sal"), ["Glow Studio"])
+        self.assertEqual(self.names("SALONS"), ["Glow Studio"])
+        self.assertEqual(self.names("electrican"), ["Sparks Home Repair"])  # spelling corrected against real words
+        self.assertEqual(self.names("resturant"), ["Spice Garden"])
+        self.assertEqual(self.names("xyzzyqq"), [])
+
+    def test_name_matches_rank_first_and_multi_word(self):
+        make = Business.objects.create
+        make(name="Spice Corner Grocery", slug="spice-corner", source="owner", kind="product")
+        self.assertEqual(self.names("spice")[0], "Spice Corner Grocery")  # name starts with the word
+        self.assertEqual(self.names("hair salon"), ["Glow Studio"])
+
+    def test_suggestions(self):
+        data = self.client.get("/api/search/suggest/", {"q": "salo"}).json()
+        self.assertEqual([row["name"] for row in data["businesses"]], ["Glow Studio"])
+        self.assertIn("Salons", [row["name"] for row in data["subcategories"]])
+        self.assertEqual(self.client.get("/api/search/suggest/", {"q": "a"}).json()["businesses"], [])

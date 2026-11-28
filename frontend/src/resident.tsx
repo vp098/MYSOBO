@@ -9,7 +9,7 @@ import { IconBadge } from "./iconBadge";
 import { LANGUAGES, useT, type MessageKey } from "./i18n";
 import { ME_KEY, ROUTES } from "./session";
 import { ThemePicker } from "./theme";
-import { MyTickets, TicketStatus, type Ticket } from "./support";
+import { MyTickets, TicketForm, TicketStatus, type Ticket } from "./support";
 import { AvatarPicker } from "./ownerFlows";
 
 /** Resident dashboard at /sobo/resident/*: home, search, saved, offers, activity, support, profile. */
@@ -70,7 +70,7 @@ export function ResidentDashboard({ user, onAuthChange }: { user?: PortalUser; o
           {active === "saved" && <Saved />}
           {active === "offers" && <Offers />}
           {active === "activity" && <ActivityList />}
-          {active === "support" && <section className="odCard"><h2>{t("sp.mineTab")}</h2><p className="odSmall">{t("sp.helpHint")}</p><MyTickets /></section>}
+          {active === "support" && <div className="tkLayout"><TicketForm /><section className="odCard"><h2>{t("sp.mineTab")}</h2><div className="tkScroll"><MyTickets /></div></section></div>}
           {active === "profile" && <Profile user={user} />}
         </div>
       </div>

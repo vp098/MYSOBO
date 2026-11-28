@@ -1,163 +1,154 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "framer-motion";
-import { BadgeCheck, Bookmark, Cake, GraduationCap, HeartPulse, Phone, Scissors, Search, ShoppingBasket, Store, Tag, Wrench } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowRight, BadgeCheck, MapPin, Plus, Star } from "lucide-react";
 import { Shell } from "./App";
-import { NeighbourhoodHub, fadeUp, stagger } from "./hub";
-import { LeafMark } from "./logo";
-import { useT, type MessageKey } from "./i18n";
-import { apiGet, type PortalUser } from "./services/api";
+import { fadeUp, stagger } from "./hub";
+import { LeafField } from "./leaves";
+import { SmartSearch } from "./smartSearch";
+import { coverFor } from "./covers";
+import { useT } from "./i18n";
+import { apiGet, type Business, type Category, type PortalUser } from "./services/api";
 import { ROUTES } from "./session";
+import { loginPath } from "./auth";
 
-type PublicPlans = { gst_percent: number; plans: { plan: "free" | "pro" | "premium"; monthly_price: number; monthly_total: number; max_photos: number; max_active_offers: number }[] };
+/*
+ * Landing page at /sobo. First screen: headline, search and the two main
+ * types (Service Based / Product Based) on the left, the leaf animation on the
+ * right. Below: three recently joined business profiles and six trusted
+ * listings. Everything comes from the database; empty slots invite owners to
+ * list their business instead of showing made-up records.
+ */
 
-const ORBIT_OUTER: LucideIcon[] = [HeartPulse, GraduationCap, Wrench, Scissors];
-const ORBIT_INNER: LucideIcon[] = [ShoppingBasket, Cake, Store];
-const FEATURES: Record<string, MessageKey[]> = {
-  free: ["od.feat.free1", "od.feat.free3"],
-  pro: ["od.feat.pro1", "od.feat.pro3", "od.feat.pro4"],
-  premium: ["od.feat.prem1", "od.feat.prem3", "od.feat.prem4"],
-};
+type Page<T> = { results: T[] } | T[];
+const rows = <T,>(data?: Page<T>) => (Array.isArray(data) ? data : data?.results ?? []);
 
-/** Circular brand mark: the MySobo leaf at the centre, local services and shops circling it. */
-function Orbit() {
-  const reduce = useReducedMotion();
-  const ring = (icons: LucideIcon[], radius: number, seconds: number, reverse = false) => (
-    <motion.div
-      className="orbRing"
-      style={{ width: radius * 2, height: radius * 2 }}
-      animate={reduce ? undefined : { rotate: reverse ? -360 : 360 }}
-      transition={{ duration: seconds, repeat: Infinity, ease: "linear" }}
-    >
-      {icons.map((Icon, index) => {
-        const angle = (index / icons.length) * Math.PI * 2;
-        return (
-          <motion.span
-            key={index}
-            className="orbChip"
-            style={{ left: radius + Math.cos(angle) * radius, top: radius + Math.sin(angle) * radius }}
-            animate={reduce ? undefined : { rotate: reverse ? 360 : -360 }}
-            transition={{ duration: seconds, repeat: Infinity, ease: "linear" }}
-          >
-            <Icon size={22} strokeWidth={1.8} />
-          </motion.span>
-        );
-      })}
-    </motion.div>
-  );
+function useListings(ordering: string, extra = "") {
+  return useQuery({
+    queryKey: ["landing-listings", ordering, extra],
+    queryFn: () => apiGet<Page<Business>>(`/businesses/?ordering=${ordering}${extra}`),
+    staleTime: 60_000,
+  });
+}
+
+function CategoryRow({ kind }: { kind: "service" | "product" }) {
+  const { t } = useT();
+  const { data } = useQuery({ queryKey: ["categories", kind], queryFn: () => apiGet<Category[]>(`/categories/?kind=${kind}`), staleTime: 5 * 60_000 });
+  const top = (data ?? []).filter((item) => kind === "service" ? item.supports_services : item.supports_products)
+    .sort((a, b) => (b.listing_count ?? 0) - (a.listing_count ?? 0) || a.priority - b.priority).slice(0, 6);
+  const base = kind === "service" ? "/services" : "/products";
   return (
-    <div className="orb" aria-hidden="true">
-      {ring(ORBIT_OUTER, 190, 60)}
-      {ring(ORBIT_INNER, 118, 44, true)}
-      <div className="orbCore"><LeafMark size={64} /></div>
+    <div className="lnCats">
+      <Link className="lnCatsLabel" to={`${ROUTES.discover}?kind=${kind}`}>{t(kind === "service" ? "main.service" : "main.product")} <ArrowRight size={14} /></Link>
+      <div className="lnChips">
+        {top.map((item) => (
+          <Link key={item.id} to={`${base}/${item.slug}`} className="lnChip">
+            {item.name}{item.listing_count ? <em>{item.listing_count}</em> : null}
+          </Link>
+        ))}
+        {!data && Array.from({ length: 4 }, (_, i) => <span key={i} className="lnChip skeleton" aria-hidden="true" />)}
+      </div>
     </div>
   );
 }
 
-/** Public landing page at /sobo. */
+function InviteCard({ wide = false }: { wide?: boolean }) {
+  const { t } = useT();
+  return (
+    <Link to={loginPath(undefined, true, true)} className={`lnInvite ${wide ? "wide" : ""}`}>
+      <span className="lnInviteIcon"><Plus size={22} /></span>
+      <b>{t("ln.inviteTitle")}</b>
+      <small>{t("ln.inviteText")}</small>
+    </Link>
+  );
+}
+
+function ProfileCard({ business }: { business: Business }) {
+  const { t, lang } = useT();
+  const joined = business.created_at ? new Date(business.created_at).toLocaleDateString(lang === "en" ? "en-IN" : `${lang}-IN`, { month: "short", year: "numeric" }) : "";
+  const initial = business.name.charAt(0).toUpperCase();
+  const categoryHref = business.category ? `/${business.kind === "product" ? "products" : "services"}/${business.category.slug}` : ROUTES.discover;
+  return (
+    <article className="lnProfile">
+      <div className="lnProfileCover"><img src={coverFor(business)} alt="" loading="lazy" /></div>
+      <span className="lnAvatar">{business.logo ? <img src={business.logo} alt="" /> : initial}</span>
+      <h3>{business.name}{business.verified && <BadgeCheck size={16} className="lnTick" aria-label={t("vf.verified")} />}</h3>
+      <p className="lnProfileMeta">{business.subcategory?.name || business.category?.name || t(business.kind === "product" ? "kind.product" : "kind.service")}</p>
+      {joined && <p className="lnJoined">{t("ln.joined", { date: joined })}</p>}
+      <div className="lnProfileActions">
+        <Link className="lnBtn small" to={ROUTES.business(business.slug)}>{t("ln.viewProfile")}</Link>
+        {business.category && <Link className="lnLink" to={categoryHref}>{t("ln.browse", { name: business.category.name })}</Link>}
+      </div>
+    </article>
+  );
+}
+
+function TrustedCard({ business }: { business: Business }) {
+  const { t } = useT();
+  return (
+    <Link to={ROUTES.business(business.slug)} className="lnTrusted">
+      <span className="lnTrustedImg">
+        <img src={coverFor(business)} alt="" loading="lazy" />
+        {business.offer && <span className="bizOffer">{business.offer.title}</span>}
+      </span>
+      <span className="lnTrustedBody">
+        <span className="lnTrustedCat">{business.subcategory?.name || business.category?.name || ""}</span>
+        <b>{business.name}{business.verified && <BadgeCheck size={15} className="lnTick" aria-label={t("vf.verified")} />}</b>
+        <span className="lnTrustedMeta">
+          {business.review_count ? <span className="lnStars"><Star size={14} fill="currentColor" />{(business.average_rating ?? 0).toFixed(1)} <em>({business.review_count})</em></span> : <span className="lnNew">{t("ln.noReviews")}</span>}
+          {business.address && !business.hide_address && <span className="lnArea"><MapPin size={13} />{business.address}</span>}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 export function Landing({ user, onAuthChange }: { user?: PortalUser; onAuthChange: () => void }) {
   const { t } = useT();
-  const [params, setParams] = useSearchParams();
   const reduce = useReducedMotion();
-  const { data: pricing } = useQuery({ queryKey: ["public-plans"], queryFn: () => apiGet<PublicPlans>("/plans/") });
-  const money = (value: number) => value.toLocaleString("en-IN", { minimumFractionDigits: value % 1 ? 2 : 0, maximumFractionDigits: 2 });
-
-  function signUpAsOwner() {
-    const next = new URLSearchParams(params);
-    next.set("dialog", "signup");
-    next.set("as", "owner");
-    next.set("go", "home");
-    setParams(next);
-  }
-
-  const steps: [LucideIcon, MessageKey, MessageKey][] = [
-    [Search, "land.step1", "land.step1Text"],
-    [BadgeCheck, "land.step2", "land.step2Text"],
-    [Phone, "land.step3", "land.step3Text"],
-  ];
+  const recent = useListings("recent");
+  const trusted = useListings("relevance", "&verified=true");
+  const fallback = useListings("rating");
+  const recentRows = rows(recent.data).slice(0, 3);
+  const trustedPool = rows(trusted.data);
+  const trustedRows = (trustedPool.length >= 6 ? trustedPool : [...trustedPool, ...rows(fallback.data).filter((item) => !trustedPool.some((v) => v.id === item.id))]).slice(0, 6);
 
   return (
-    <Shell user={user} onAuthChange={onAuthChange} bottomNav={null}>
-      <section className="land">
-        <motion.div className="landCopy" initial={reduce ? false : "hidden"} animate="show" variants={stagger}>
-          <motion.p variants={fadeUp} className="landChip"><LeafMark size={16} />{t("land.chip")}</motion.p>
-          <motion.h1 variants={fadeUp}>{t("land.title1")} <em>{t("land.title2")}</em></motion.h1>
-          <motion.p variants={fadeUp} className="landSub">{t("land.sub")}</motion.p>
-          <motion.div variants={fadeUp} className="landCtas">
-            <Link className="landBtn primary" to={ROUTES.discover}><Search size={18} />{t("land.ctaFind")}</Link>
-            {user
-              ? <Link className="landBtn" to={user.home}>{t("nav.dashboard")}</Link>
-              : <button type="button" className="landBtn" onClick={signUpAsOwner}><Store size={18} />{t("land.ctaList")}</button>}
+    <Shell user={user} onAuthChange={onAuthChange} bottomNav={null} wide>
+      <section className="lnHero">
+        <motion.div className="lnCopy" initial={reduce ? false : "hidden"} animate="show" variants={stagger}>
+          <motion.h1 variants={fadeUp}>{t("ln.title1")} <em>{t("ln.title2")}</em></motion.h1>
+          <motion.p variants={fadeUp} className="lnSub">{t("ln.sub")}</motion.p>
+          <motion.div variants={fadeUp} className="lnSearch"><SmartSearch size="large" /></motion.div>
+          <motion.div variants={fadeUp} className="lnCatBlock">
+            <CategoryRow kind="service" />
+            <CategoryRow kind="product" />
           </motion.div>
-          <motion.p variants={fadeUp} className="landFine">{t("land.fine")}</motion.p>
         </motion.div>
-        <div className="orbWrap"><Orbit /></div>
+        <div className="lnArt"><LeafField /></div>
       </section>
 
-      <section className="section landTwo">
-        <article className="landCard">
-          <span className="landCardIcon"><Search size={22} /></span>
-          <h2>{t("land.residentsTitle")}</h2>
-          <ul>
-            <li><BadgeCheck size={17} />{t("land.res1")}</li>
-            <li><Phone size={17} />{t("land.res2")}</li>
-            <li><Bookmark size={17} />{t("land.res3")}</li>
-          </ul>
-          <Link className="landLink" to={ROUTES.discover}>{t("land.ctaFind")} →</Link>
-        </article>
-        <article className="landCard owner">
-          <span className="landCardIcon"><Store size={22} /></span>
-          <h2>{t("land.ownersTitle")}</h2>
-          <ul>
-            <li><Store size={17} />{t("land.own1")}</li>
-            <li><Tag size={17} />{t("land.own2")}</li>
-            <li><BadgeCheck size={17} />{t("land.own3")}</li>
-          </ul>
-          {user
-            ? <Link className="landLink" to={ROUTES.owner}>{t("nav.business")} →</Link>
-            : <button type="button" className="landLink" onClick={signUpAsOwner}>{t("land.ctaList")} →</button>}
-        </article>
+      <section className="lnSection" aria-labelledby="ln-browse">
+        <div className="lnHead">
+          <div><h2 id="ln-browse">{t("ln.browseTitle")}</h2><p>{t("ln.browseSub")}</p></div>
+          <Link className="lnLink" to={ROUTES.discover}>{t("ln.exploreAll")} <ArrowRight size={15} /></Link>
+        </div>
+        <div className="lnProfiles">
+          {recent.isLoading ? Array.from({ length: 3 }, (_, i) => <div key={i} className="lnProfile skeleton" aria-hidden="true" />)
+            : <>{recentRows.map((business) => <ProfileCard key={business.id} business={business} />)}
+              {Array.from({ length: Math.max(0, 3 - recentRows.length) }, (_, i) => <InviteCard key={`invite-${i}`} />)}</>}
+        </div>
       </section>
 
-      <section className="section landSteps">
-        <h2>{t("land.howTitle")}</h2>
-        <ol>
-          {steps.map(([Icon, title, text], index) => (
-            <li key={title}><span className="landStepNo">{index + 1}</span><Icon size={22} /><b>{t(title)}</b><p>{t(text)}</p></li>
-          ))}
-        </ol>
-      </section>
-
-      <NeighbourhoodHub />
-
-      {pricing && pricing.plans.length > 0 && (
-        <section className="section landPricing" id="pricing">
-          <h2>{t("land.pricingTitle")}</h2>
-          <p className="mutedText">{t("land.pricingSub", { gst: pricing.gst_percent })}</p>
-          <div className="landPlans">
-            {pricing.plans.map((plan) => (
-              <article key={plan.plan} className={`landPlan ${plan.plan === "pro" ? "pick" : ""}`}>
-                <h3>{t(`od.plan.${plan.plan}` as MessageKey)}</h3>
-                <p className="landPrice"><b>₹{money(plan.monthly_price)}</b><span>/ {t("od.month")}</span></p>
-                <p className="landGst">{plan.monthly_price ? t("land.withGst", { total: money(plan.monthly_total), gst: pricing.gst_percent }) : t("land.freeForever")}</p>
-                <ul>
-                  <li><BadgeCheck size={16} />{t("lim.photos", { n: plan.max_photos })}</li>
-                  <li><BadgeCheck size={16} />{t("lim.offers", { n: plan.max_active_offers })}</li>
-                  {(FEATURES[plan.plan] ?? []).map((key) => <li key={key}><BadgeCheck size={16} />{t(key)}</li>)}
-                </ul>
-              </article>
-            ))}
-          </div>
-          <p className="landFine">{t("land.payNote")}</p>
-        </section>
-      )}
-
-      <section className="section landEnd">
-        <h2>{t("land.endTitle")}</h2>
-        <div className="landCtas">
-          <Link className="landBtn primary" to={ROUTES.discover}>{t("land.ctaFind")}</Link>
-          {!user && <button type="button" className="landBtn" onClick={signUpAsOwner}>{t("land.ctaList")}</button>}
+      <section className="lnSection" aria-labelledby="ln-trusted">
+        <div className="lnHead">
+          <div><h2 id="ln-trusted">{t("ln.trustedTitle")}</h2><p>{t("ln.trustedSub")}</p></div>
+          <Link className="lnLink" to={`${ROUTES.discover}#results`}>{t("ln.seeAllListings")} <ArrowRight size={15} /></Link>
+        </div>
+        <div className="lnTrustedGrid">
+          {trusted.isLoading ? Array.from({ length: 6 }, (_, i) => <div key={i} className="lnTrusted skeleton" aria-hidden="true" />)
+            : <>{trustedRows.map((business) => <TrustedCard key={business.id} business={business} />)}
+              {trustedRows.length < 6 && <InviteCard wide />}</>}
         </div>
       </section>
     </Shell>

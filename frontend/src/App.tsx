@@ -24,7 +24,7 @@ import {
   type Subcategory,
 } from "./services/api";
 import { LanguageSwitch, useT, type MessageKey } from "./i18n";
-import { InstallButton } from "./pwa";
+import { InstallButton, InstallCard } from "./pwa";
 import { OwnerDashboard } from "./owner";
 import { SuperAdminDashboard } from "./superadmin";
 import { coverFor, coverForCategory } from "./covers";
@@ -32,8 +32,9 @@ import { ListingPage } from "./listing";
 import { Onboarding, shouldOnboard } from "./onboarding";
 import { fadeUp, stagger } from "./hub";
 import { motion, useReducedMotion } from "framer-motion";
-import { SMS_OTP_ENABLED } from "./google";
-import { AuthScreen } from "./auth";
+import { AuthPage, loginPath, useLegacyLoginRedirect } from "./auth";
+import { AccountMenu } from "./accountMenu";
+import { SmartSearch } from "./smartSearch";
 import { ME_KEY, ROUTES, useMe, type LoginResult } from "./session";
 import { useApplyTheme } from "./theme";
 import { ResidentDashboard } from "./resident";
@@ -46,21 +47,24 @@ export function Shell({
   onAuthChange,
   bottomNav,
   dashboard = false,
+  wide = false,
 }: {
   children: ReactNode;
   user?: PortalUser;
   onAuthChange: () => void;
-  /** Fixed-viewport dashboard layout on desktop (sidebar + internally scrolling main). */
+  /** Fixed-viewport dashboard layout: top bar and sidebar stay, only the main area scrolls. */
   dashboard?: boolean;
+  /** Full-width page (landing). */
+  wide?: boolean;
   /** Phone tab bar. Omit for the resident tabs; pass null for none. */
   bottomNav?: ReactNode | null;
 }) {
-  const [params, setParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [logoutError, setLogoutError] = useState("");
   const { t } = useT();
+  const legacyLogin = useLegacyLoginRedirect(user);
 
   async function logout() {
     try {
@@ -69,222 +73,44 @@ export function Shell({
       queryClient.setQueryData(ME_KEY, null);
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_KEY[0] });
       onAuthChange();
-      navigate(ROUTES.discover);
+      navigate(ROUTES.landing);
     } catch (error) {
       setLogoutError(error instanceof Error ? error.message : t("err.logout"));
     }
   }
 
-  function closeLogin() {
-    const next = new URLSearchParams(params);
-    next.delete("dialog");
-    next.delete("go");
-    next.delete("as");
-    setParams(next);
-  }
-
-  /** Header log-in goes to the person's home; a log-in asked for on a listing stays on that page. */
-  function loginComplete(result: LoginResult) {
-    const goHome = params.get("go") === "home";
-    void queryClient.invalidateQueries();
-    onAuthChange();
-    if (goHome && result.home) navigate(result.home);
-    else closeLogin();
-  }
+  if (legacyLogin) return <Navigate to={legacyLogin} replace />;
+  const here = `${location.pathname}${location.search}`;
+  const isOwnerArea = location.pathname.startsWith(ROUTES.owner);
 
   return (
-    <div className={`app ${bottomNav === null ? "" : "hasTabbar"} ${dashboard ? "dash" : ""}`}>
+    <div className={`app ${bottomNav === null ? "" : "hasTabbar"} ${dashboard ? "dash" : ""} ${wide ? "wide" : ""}`}>
       <header className="topbar">
-        <a className="brand" href={ROUTES.discover} aria-label={t("nav.home")}>
+        <Link className="brand" to={ROUTES.landing} aria-label={t("nav.home")}>
           <Logo size={30} />
-        </a>
-        <nav>
-          <a className="topLink" href="/mysobo" aria-current={location.pathname === "/mysobo" ? "page" : undefined}>{t("nav.residents")}</a>
-          {user?.home !== ROUTES.owner && <a className="topLink" href={ROUTES.owner} aria-current={location.pathname.startsWith("/sobo/business-owner") ? "page" : undefined}>{t("nav.business")}</a>}
-          {user?.is_superadmin && <a className="topLink" href={ROUTES.admin} aria-current={location.pathname.startsWith(ROUTES.admin) ? "page" : undefined}>{t("nav.superadmin")}</a>}
-          {user && !user.is_superadmin && user.home && <a className="topLink" href={user.home} aria-current={location.pathname.startsWith(user.home) ? "page" : undefined}>{t("nav.dashboard")}</a>}
-          <InstallButton />
-          <LanguageSwitch />
-          {user ? (
-            <button type="button" className="navButton" onClick={logout}>{t("nav.logout")}</button>
-          ) : (
-            <button type="button" className="button buttonLight" onClick={() => {
-              const next = new URLSearchParams(params);
-              next.set("dialog", "login");
-              next.set("go", "home");
-              setParams(next);
-            }}>{t("nav.login")}</button>
+        </Link>
+        <nav className="topNav" aria-label={t("nav.main")}>
+          <Link className="topLink" to={ROUTES.discover} aria-current={location.pathname === ROUTES.discover ? "page" : undefined}>{t("nav.explore")}</Link>
+          {user?.home !== ROUTES.owner && !user?.is_superadmin && (
+            <Link className="topLink" to={ROUTES.owner} aria-current={isOwnerArea ? "page" : undefined}>{t("nav.business")}</Link>
           )}
         </nav>
+        <div className="topActions">
+          <InstallButton />
+          <LanguageSwitch />
+          {user ? <AccountMenu user={user} onLogout={() => void logout()} /> : (
+            <>
+              <Link className="navGhost" to={loginPath(location.pathname === ROUTES.landing ? undefined : here)}>{t("nav.login")}</Link>
+              <Link className="navPrimary" to={loginPath(undefined, true)}>{t("nav.signup")}</Link>
+            </>
+          )}
+        </div>
       </header>
       {logoutError && <p className="formError topError">{logoutError}</p>}
       <main>{children}</main>
       {bottomNav === undefined ? <ResidentTabbar /> : bottomNav}
       <SupportChat user={user} />
-      {(params.get("dialog") === "login" || params.get("dialog") === "signup") && (
-        <LoginDialog onClose={closeLogin} onSuccess={loginComplete} startWith={params.get("dialog") === "signup" ? "signup" : "login"} accountType={params.get("as") === "owner" ? "business_owner" : "resident"} />
-      )}
     </div>
-  );
-}
-
-function LoginDialog({ onClose, onSuccess, startWith = "login", accountType }: { onClose: () => void; onSuccess: (result: LoginResult) => void; startWith?: "login" | "signup"; accountType?: "resident" | "business_owner" }) {
-  const { t } = useT();
-  const [error, setError] = useState("");
-  const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<"email" | "otp">("email");
-  const [mobile, setMobile] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [code, setCode] = useState("");
-  const [codeRequested, setCodeRequested] = useState(false);
-  const [resendSeconds, setResendSeconds] = useState(0);
-  const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    if (resendSeconds <= 0) return;
-    const timer = window.setTimeout(() => setResendSeconds((seconds) => seconds - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [resendSeconds]);
-
-  async function requestOtp(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    setPending(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await apiPost<{ detail: string; resend_after_seconds: number }>(
-        "/auth/otp/request/",
-        { mobile, consent },
-      );
-      setCodeRequested(true);
-      setCode("");
-      setResendSeconds(response.resend_after_seconds);
-      setNotice(response.detail);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("err.sendCode"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    try {
-      onSuccess(await apiPost<LoginResult>("/auth/otp/verify/", { mobile, code }));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("err.verify"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  if (mode === "email" || !SMS_OTP_ENABLED) {
-    return (
-      <AuthScreen
-        startWith={startWith}
-        accountType={accountType}
-        onSuccess={onSuccess}
-        onClose={onClose}
-        onMobile={SMS_OTP_ENABLED ? () => setMode("otp") : undefined}
-      />
-    );
-  }
-
-  return (
-    <div className="modalBackdrop" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose();
-    }}>
-      <section className="authCard modalCard" role="dialog" aria-modal="true" aria-labelledby="login-title">
-        <button className="modalClose" type="button" onClick={onClose} aria-label={t("close")}>×</button>
-        <span className="authLogo"><LeafMark size={60} /></span>
-        <p className="eyebrow">{t("login.eyebrow")}</p>
-        <h1 id="login-title">{t("login.title")}</h1>
-        <p className="mutedText">{t("login.intro")}</p>
-        {codeRequested ? (
-            <form onSubmit={verifyOtp}>
-              <p className="mutedText">{t("login.enterCode", { mobile })}</p>
-              <label>{t("login.code")}
-                <input
-                  name="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  required
-                />
-              </label>
-              {error && <p className="formError">{error}</p>}
-              <button className="button authButton" type="submit" disabled={pending || code.length !== 6}>{pending ? t("login.verifying") : t("login.verify")}</button>
-              <div className="loginSecondaryActions">
-                <button type="button" className="textButton" onClick={() => {
-                  setCodeRequested(false);
-                  setConsent(false);
-                  setCode("");
-                  setError("");
-                  setNotice("");
-                }}>{t("login.changeNumber")}</button>
-                <button type="button" className="textButton" disabled={pending || resendSeconds > 0} onClick={() => void requestOtp()}>
-                  {resendSeconds > 0 ? t("login.resendIn", { s: resendSeconds }) : t("login.resend")}
-                </button>
-              </div>
-              {notice && <p className="inlineMessage">{notice}</p>}
-            </form>
-          ) : (
-            <form onSubmit={requestOtp}>
-              <label>{t("login.mobile")}<input name="mobile" type="tel" inputMode="tel" autoComplete="tel" placeholder={t("login.mobilePh")} value={mobile} onChange={(event) => setMobile(event.target.value)} required /></label>
-              <label className="consentCheck">
-                <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-                <span>{t("login.consent")}</span>
-              </label>
-              {error && <p className="formError">{error}</p>}
-              <button className="button authButton" type="submit" disabled={pending || !mobile.trim() || !consent}>{pending ? t("login.sending") : t("login.send")}</button>
-            </form>
-          )}
-        <button type="button" className="textButton loginModeToggle" onClick={() => {
-          setMode("email");
-          setError("");
-          setNotice("");
-        }}>{t("login.useEmail")}</button>
-      </section>
-    </div>
-  );
-}
-
-function SearchBox() {
-  const [params, setParams] = useSearchParams();
-  const [value, setValue] = useState(params.get("q") ?? "");
-  const { t } = useT();
-  const paramsRef = useRef(params);
-  paramsRef.current = params;
-
-  function apply(text: string) {
-    const next = new URLSearchParams(paramsRef.current);
-    next.delete("listing");
-    if (text.trim()) next.set("q", text.trim());
-    else next.delete("q");
-    if ((paramsRef.current.get("q") ?? "") !== (next.get("q") ?? "")) setParams(next, { replace: true });
-  }
-
-  // Results update as you type (short pause so we do not search on every key).
-  useEffect(() => {
-    const timer = window.setTimeout(() => apply(value), 350);
-    return () => window.clearTimeout(timer);
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <form className="searchBlock" role="search" onSubmit={(event: FormEvent) => { event.preventDefault(); apply(value); }}>
-      <div className="search searchLarge">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></svg>
-        <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder={t("rs.searchPh")} aria-label={t("search.label")} />
-        {value && <button type="button" className="searchClear" aria-label={t("close")} onClick={() => setValue("")}>×</button>}
-        <button type="submit">{t("search.button")}</button>
-      </div>
-      <p className="searchHelp"><span>{t("rs.searchHelp")}</span><span>{t("rs.chars", { n: value.length })}</span></p>
-    </form>
   );
 }
 
@@ -656,6 +482,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   const query = params.get("q") ?? "";
   const area = params.get("area") ?? (() => { try { return localStorage.getItem("mysobo-area") ?? ""; } catch { return ""; } })();
   const [onboarding, setOnboarding] = useState(() => !user && !params.get("dialog") && shouldOnboard());
+  const { isLoading: meLoading } = useMe();
   const [allCategoriesOpen, setAllCategoriesOpen] = useState(() => window.matchMedia("(max-width: 900px)").matches);
   const {
     data: categories,
@@ -714,10 +541,10 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
   appendSubcategories(null, 0);
 
   useEffect(() => {
-    if (selectedCategory) {
+    if (selectedCategory || window.location.hash === "#results") {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [selectedCategory, selectedSubcategory]);
+  }, [selectedCategory, selectedSubcategory, query]);
 
   function setFilter(key: string, value: string) {
     const next = new URLSearchParams(params);
@@ -749,7 +576,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           <p className="heroPill"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M12 2l1.8 5.4L19 9l-5.2 1.6L12 16l-1.8-5.4L5 9l5.2-1.6zM19 14l.9 2.6L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.4z" /></svg>{t("rs.pill")}</p>
           <h1>{t("home.title1")}<br />{t("home.title2")}</h1>
           <p className="heroSub">{t("rs.sub")}</p>
-          <SearchBox />
+          <SmartSearch key={query} initial={query} kind={kind} size="medium" onSubmit={(text) => setFilter("q", text)} />
           <div className="heroFilters">
           <div className="mainKinds" role="radiogroup" aria-label={t("home.tabsLabel")}>
             {(["service", "product"] as const).map((item) => (
@@ -766,18 +593,6 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
               </button>
             ))}
           </div>
-          <label className="areaPick">
-            <span className="srOnly">{t("r3.area")}</span>
-            <LeafMark size={16} />
-            <select value={area} onChange={(event) => {
-              const value = event.target.value;
-              try { localStorage.setItem("mysobo-area", value); } catch { /* ignore */ }
-              setFilter("area", value);
-            }}>
-              <option value="">{t("r3.allAreas")}</option>
-              {AREAS.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
           </div>
         </div>
         <div className="heroArt" aria-hidden="true">
@@ -807,6 +622,8 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           ))}
         </ul>
       </section>
+
+      <div className="section installSection" id="install"><InstallCard /></div>
 
       <section className="section categorySection" id="categories">
         <div className="sectionTitle">
@@ -872,7 +689,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
         )}
       </section>
 
-      <section className="section listingResults" ref={resultsRef}>
+      <section className="section listingResults" id="results" ref={resultsRef}>
         <div className="sectionTitle">
           <div>
             <p className="eyebrow">
@@ -913,7 +730,7 @@ function Residents({ user, onAuthChange }: { user?: PortalUser; onAuthChange: ()
           </div>
         )}
       </section>
-      {onboarding && <Onboarding onDone={(nextStep) => {
+      {onboarding && !user && !meLoading && <Onboarding onDone={(nextStep) => {
         setOnboarding(false);
         if (nextStep) {
           const next = new URLSearchParams(params);
@@ -1628,6 +1445,8 @@ export default function App() {
       <Route path="/" element={<Navigate to={ROUTES.landing} replace />} />
       <Route path="/sobo" element={<Landing user={user} onAuthChange={authChanged} />} />
       <Route path="/sobo/app" element={<AppEntry />} />
+      <Route path="/signup" element={<AuthPage mode="signup" />} />
+      <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/mysobo" element={<Residents user={user} onAuthChange={authChanged} />} />
       <Route path="/sobo/resident/*" element={signedInOnly(<ResidentDashboard user={user} onAuthChange={authChanged} />)} />
       <Route path="/sobo/business-owner/*" element={signedInOnly(<OwnerDashboard user={user} onAuthChange={authChanged} />)} />

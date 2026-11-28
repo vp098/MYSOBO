@@ -83,3 +83,31 @@ class AdminRole(models.Model):
 
     class Meta:
         unique_together = ("user", "role")
+
+
+class SocialIdentity(models.Model):
+    """A sign-in provider account (Google) linked to a MySobo user.
+
+    `subject` is Google's stable user id ("sub"), so a person keeps the same
+    MySobo account even if their Google email changes.
+    """
+
+    class Provider(models.TextChoices):
+        GOOGLE = "google", "Google"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="identities")
+    provider = models.CharField(max_length=20, choices=Provider.choices)
+    subject = models.CharField(max_length=255)
+    email = models.EmailField(blank=True)
+    email_verified = models.BooleanField(default=False)
+    name = models.CharField(max_length=200, blank=True)
+    picture = models.URLField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("provider", "subject"), name="unique_provider_subject"),
+            models.UniqueConstraint(fields=("user", "provider"), name="one_identity_per_provider_per_user"),
+        ]

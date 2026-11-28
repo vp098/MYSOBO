@@ -56,6 +56,9 @@ class OTPRequestView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request):
+        blocked = google_only()
+        if blocked:
+            return blocked
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         mobile = serializer.validated_data["mobile"]
@@ -132,6 +135,9 @@ class OTPVerifyView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        blocked = google_only()
+        if blocked:
+            return blocked
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         mobile = serializer.validated_data["mobile"]
@@ -194,8 +200,36 @@ class GoogleLoginThrottle(ScopedRateThrottle):
     scope = "google_login"
 
 
+def google_only():
+    """The response other sign-in methods give while Google is the only way in."""
+    if getattr(settings, "ALLOW_PASSWORD_LOGIN", False):
+        return None
+    return Response({"detail": "Please continue with Google.", "code": "google_only"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AuthConfigView(APIView):
+    """Public sign-in settings for the web app. The Google client id is public by design."""
+
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+
+    def get(self, request):
+        return Response({
+            "google_client_id": settings.GOOGLE_CLIENT_ID or "",
+            "google_enabled": bool(settings.GOOGLE_CLIENT_ID),
+            "password_login": bool(getattr(settings, "ALLOW_PASSWORD_LOGIN", False)),
+        })
+
+
 class GoogleLoginView(APIView):
-    """Exchange a Google ID token ("credential") for a MySobo API token."""
+    """Sign up or log in with a Google ID token. Body: {credential, account_type?}.
+
+    1. The token is verified with Google (audience, issuer, expiry, verified email).
+    2. The person is found by their Google id; if this Google account was never
+       used before, an existing MySobo account with the same verified email is
+       linked; otherwise a new account and profile are created.
+    3. A session cookie is set and the person's home dashboard is returned.
+    """
 
     authentication_classes = ()
     permission_classes = (AllowAny,)
@@ -203,46 +237,78 @@ class GoogleLoginView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        from .models import SocialIdentity
+
         if not settings.GOOGLE_CLIENT_ID:
             return Response(
-                {"detail": "Google sign-in is not set up yet."},
+                {"detail": "Google sign-in is not set up yet.", "code": "not_configured"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         try:
             claims = verify_google_credential(str(request.data.get("credential", "")))
         except GoogleTokenError as error:
-            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(error), "code": "invalid_token"}, status=status.HTTP_400_BAD_REQUEST)
 
+        subject = str(claims["sub"])
         email = claims["email"].strip().lower()
-        user = User.objects.select_for_update().filter(email__iexact=email).order_by("date_joined").first()
-        if user is None:
-            user = User.objects.create_user(
-                username=f"google-{claims['sub']}"[:150],
-                email=email,
-                first_name=str(claims.get("given_name", ""))[:150],
-                last_name=str(claims.get("family_name", ""))[:150],
-            )
-            user.set_unusable_password()
-            user.save(update_fields=("password",))
+        full_name = " ".join(str(claims.get("name", "")).split())[:200]
+        picture = str(claims.get("picture", ""))[:500]
+        identity = SocialIdentity.objects.select_for_update().select_related("user").filter(
+            provider=SocialIdentity.Provider.GOOGLE, subject=subject
+        ).first()
+        created = False
+        if identity is not None:
+            user = identity.user
+        else:
+            user = User.objects.select_for_update().filter(email__iexact=email).order_by("date_joined").first()
+            if user is not None and SocialIdentity.objects.filter(user=user, provider=SocialIdentity.Provider.GOOGLE).exists():
+                # This MySobo account is already linked to a different Google account.
+                return Response(
+                    {"detail": "This email is linked to another Google account. Contact support.", "code": "conflict"},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if user is None:
+                user = User.objects.create_user(
+                    username=f"google-{subject}"[:150],
+                    email=email,
+                    first_name=str(claims.get("given_name", ""))[:150],
+                    last_name=str(claims.get("family_name", ""))[:150],
+                )
+                user.set_unusable_password()
+                user.save(update_fields=("password",))
+                created = True
+            identity = SocialIdentity(user=user, provider=SocialIdentity.Provider.GOOGLE, subject=subject)
+
         set_authenticated_user_rls_context(user.pk)
         if not user.is_active:
-            return Response(
-                {"detail": "This account cannot sign in. Contact support."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "This account cannot sign in. Contact support.", "code": "inactive"},
+                            status=status.HTTP_403_FORBIDDEN)
         profile = Profile.objects.filter(id=user).first()
         if profile and profile.deleted_at is not None:
-            return Response(
-                {"detail": "This account cannot sign in. Contact support."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "This account cannot sign in. Contact support.", "code": "inactive"},
+                            status=status.HTTP_403_FORBIDDEN)
         if profile is None:
-            profile = Profile.objects.create(id=user, name=str(claims.get("name", ""))[:200])
+            account_type = str(request.data.get("account_type", Profile.AccountType.RESIDENT))
+            if account_type not in Profile.AccountType.values:
+                account_type = Profile.AccountType.RESIDENT
+            profile = Profile.objects.create(id=user, name=full_name, account_type=account_type)
+        elif not profile.name and full_name:
+            profile.name = full_name
+            profile.save(update_fields=("name",))
         if profile.consent_at is None:
             profile.consent_at = timezone.now()
             profile.consent_version = "google-signin"
             profile.save(update_fields=("consent_at", "consent_version"))
-        return signed_in(request, user)
+
+        identity.email = email
+        identity.email_verified = True
+        identity.name = full_name
+        identity.picture = picture
+        identity.last_login_at = timezone.now()
+        identity.save()
+        response = signed_in(request, user)
+        response.data["new"] = created
+        return response
 
 
 class DemoLoginThrottle(ScopedRateThrottle):
@@ -262,6 +328,9 @@ class DemoEmailLoginView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        blocked = google_only()
+        if blocked:
+            return blocked
         if not settings.DEMO_EMAIL_LOGIN:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         email = str(request.data.get("email", "")).strip().lower()
@@ -322,6 +391,9 @@ class EmailRegisterView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        blocked = google_only()
+        if blocked:
+            return blocked
         from django.contrib.auth.password_validation import validate_password
         from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -367,6 +439,9 @@ class EmailLoginView(APIView):
     throttle_classes = (EmailAuthThrottle,)
 
     def post(self, request):
+        blocked = google_only()
+        if blocked:
+            return blocked
         identifier = str(request.data.get("email", "")).strip()
         password = str(request.data.get("password", ""))
         if not identifier or not password:

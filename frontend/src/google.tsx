@@ -1,23 +1,34 @@
-
 import { useEffect, useRef, useState } from "react";
-import { apiPost } from "./services/api";
+import { useQuery } from "@tanstack/react-query";
+import { ApiError, apiGet, apiPost } from "./services/api";
 import { useT } from "./i18n";
 import type { LoginResult } from "./session";
 
 /*
- * "Continue with Google" using Google Identity Services.
- * Needs VITE_GOOGLE_CLIENT_ID (frontend) and GOOGLE_CLIENT_ID (backend) set to
- * the same OAuth 2.0 Web client ID from Google Cloud Console.
+ * "Continue with Google" (Google Identity Services). Google is the only way to
+ * sign up or log in. The client id comes from the backend (/api/auth/config/),
+ * so only GOOGLE_CLIENT_ID has to be set, on the backend. VITE_GOOGLE_CLIENT_ID
+ * still works as a build-time fallback.
  */
-export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
-export const SMS_OTP_ENABLED = import.meta.env.VITE_ENABLE_SMS_OTP === "true";
+const BUILD_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? "";
 
 type GoogleId = {
-  initialize: (options: { client_id: string; callback: (response: { credential: string }) => void; ux_mode?: string; auto_select?: boolean }) => void;
+  initialize: (options: { client_id: string; callback: (response: { credential: string }) => void; ux_mode?: string; auto_select?: boolean; cancel_on_tap_outside?: boolean }) => void;
   renderButton: (element: HTMLElement, options: Record<string, string | number>) => void;
 };
 declare global {
   interface Window { google?: { accounts: { id: GoogleId } } }
+}
+
+export type AuthConfig = { google_client_id: string; google_enabled: boolean; password_login: boolean };
+
+export function useAuthConfig() {
+  return useQuery({
+    queryKey: ["auth-config"],
+    queryFn: () => apiGet<AuthConfig>("/auth/config/"),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
 }
 
 let scriptPromise: Promise<void> | null = null;
@@ -35,26 +46,53 @@ function loadGoogleScript() {
   return scriptPromise;
 }
 
-export function GoogleSignIn({ onSuccess }: { onSuccess: (result: LoginResult) => void }) {
+export type GoogleState = "loading" | "ready" | "not_configured" | "load_failed";
+
+/**
+ * Renders Google's own button. Success, a rejected token, a blocked account and
+ * network errors are all reported; closing Google's window simply leaves the
+ * button in place (Google does not report a cancelled pop-up).
+ */
+export function GoogleSignIn({ accountType, signup = false, onSuccess, onState }: {
+  accountType?: "resident" | "business_owner";
+  signup?: boolean;
+  onSuccess: (result: LoginResult & { new?: boolean }) => void;
+  onState?: (state: GoogleState) => void;
+}) {
   const { t, lang } = useT();
   const holder = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [state, setState] = useState<GoogleState>("loading");
+  const config = useAuthConfig();
+  const clientId = config.data?.google_client_id || BUILD_CLIENT_ID;
+  const typeRef = useRef(accountType);
+  typeRef.current = accountType;
+  const successRef = useRef(onSuccess);
+  successRef.current = onSuccess;
+
+  useEffect(() => { onState?.(state); }, [state, onState]);
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
+    if (config.isLoading) return;
+    if (!clientId) { setState("not_configured"); return; }
     let cancelled = false;
     loadGoogleScript().then(() => {
       if (cancelled || !holder.current || !window.google) return;
       window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
+        client_id: clientId,
+        cancel_on_tap_outside: true,
         callback: async ({ credential }) => {
           setError("");
           setPending(true);
           try {
-            onSuccess(await apiPost<LoginResult>("/auth/google/", { credential }));
+            successRef.current(await apiPost<LoginResult & { new?: boolean }>("/auth/google/", { credential, account_type: typeRef.current }));
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : t("err.google"));
+            if (cause instanceof ApiError && cause.status === 403) setError(t("au.blocked"));
+            else if (cause instanceof ApiError && cause.status === 503) setError(t("au.notConfigured"));
+            else if (cause instanceof ApiError && cause.status === 409) setError(cause.message);
+            else if (cause instanceof ApiError && cause.status === 400) setError(t("au.googleRejected"));
+            else setError(t("au.network"));
           } finally {
             setPending(false);
           }
@@ -63,26 +101,27 @@ export function GoogleSignIn({ onSuccess }: { onSuccess: (result: LoginResult) =
       holder.current.innerHTML = "";
       window.google.accounts.id.renderButton(holder.current, {
         type: "standard",
-        theme: "outline",
+        theme: "filled_blue",
         size: "large",
-        text: "continue_with",
+        text: signup ? "signup_with" : "continue_with",
         shape: "pill",
         logo_alignment: "left",
-        width: Math.min(holder.current.clientWidth || 320, 400),
+        width: Math.max(240, Math.min(holder.current.clientWidth || 320, 400)),
         locale: lang === "gu" ? "gu" : lang === "hi" ? "hi" : "en",
       });
-    }).catch(() => { if (!cancelled) setError(t("err.googleLoad")); });
+      setState("ready");
+    }).catch(() => { if (!cancelled) setState("load_failed"); });
     return () => { cancelled = true; };
-  }, [lang, onSuccess, t]);
+  }, [clientId, config.isLoading, lang, signup, t]);
 
-  // Google sign-in is optional: without a client id it simply does not show.
-  if (!GOOGLE_CLIENT_ID) return null;
   return (
     <div className="googleSignIn">
-      <div ref={holder} className="googleButtonHolder" aria-busy={pending} />
-      {pending && <p className="mutedText">{t("login.signingIn")}</p>}
-      {error && <p className="formError">{error}</p>}
-      <p className="googleConsent">{t("login.googleConsent")}</p>
+      {state === "loading" && <div className="gsiSkeleton" aria-busy="true">{t("au.loadingGoogle")}</div>}
+      {state === "not_configured" && <p className="auNotice" role="status">{t("au.notConfigured")}</p>}
+      {state === "load_failed" && <p className="formError" role="alert">{t("err.googleLoad")}</p>}
+      <div ref={holder} className="googleButtonHolder" aria-busy={pending} hidden={state !== "ready"} />
+      {pending && <p className="mutedText" role="status">{t("login.signingIn")}</p>}
+      {error && <p className="formError" role="alert">{error}</p>}
     </div>
   );
 }
